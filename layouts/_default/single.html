@@ -1,0 +1,26 @@
+{{ define "main" }}
+<article class="item">
+  <a class="back-link" href="{{ .Parent.RelPermalink }}">← Back to {{ .Parent.Title }}</a>
+  <header class="item-head">
+    <h1>{{ .Title }}</h1>
+    {{ with .Params.brand }}<p class="item-brand">{{ . }}</p>{{ end }}
+  </header>
+
+  {{ with .Params.image }}
+    <figure class="item-figure">
+      <img src="{{ . | relURL }}" alt="{{ $.Title }}">
+    </figure>
+  {{ end }}
+
+  <dl class="item-meta">
+    {{ with .Params.color }}<dt>Color</dt><dd>{{ . }}</dd>{{ end }}
+    {{ with .Params.size }}<dt>Size</dt><dd>{{ . }}</dd>{{ end }}
+    {{ with .Params.season }}<dt>Season</dt><dd>{{ delimit . ", " }}</dd>{{ end }}
+    {{ with .Params.tags }}<dt>Tags</dt><dd>{{ delimit . ", " }}</dd>{{ end }}
+  </dl>
+
+  <div class="item-body">
+    {{ .Content }}
+  </div>
+</article>
+{{ end }}

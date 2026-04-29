@@ -1,0 +1,16 @@
+{{ define "main" }}
+<section class="page-head">
+  <h1>{{ .Title }}</h1>
+  {{ with .Content }}<div class="page-intro">{{ . }}</div>{{ end }}
+</section>
+
+{{ if .Pages }}
+<div class="grid">
+  {{ range .Pages.ByTitle }}
+    {{ partial "item-card.html" . }}
+  {{ end }}
+</div>
+{{ else }}
+<p class="empty-state">Nothing here yet. Add markdown files inside <code>content/{{ .Section }}/</code> to populate this section.</p>
+{{ end }}
+{{ end }}

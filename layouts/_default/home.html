@@ -1,0 +1,44 @@
+{{ define "main" }}
+<section class="hero">
+  <h1 class="hero-title">{{ .Site.Title }}</h1>
+  <p class="hero-tag">{{ .Site.Params.description }}</p>
+  <div class="hero-cta">
+    <a href="{{ "/categories/" | relURL }}" class="btn btn-primary">Browse by Category</a>
+    <a href="{{ "/outfits/" | relURL }}" class="btn">View Outfits</a>
+  </div>
+</section>
+
+<section class="quick-tabs">
+  <a class="tab-card" href="{{ "/categories/" | relURL }}">
+    <span class="tab-eyebrow">Browse</span>
+    <span class="tab-title">Categories</span>
+    <span class="tab-desc">Tops, bottoms, dresses, shoes, accessories.</span>
+  </a>
+  <a class="tab-card" href="{{ "/seasons/" | relURL }}">
+    <span class="tab-eyebrow">Sort by</span>
+    <span class="tab-title">Seasons</span>
+    <span class="tab-desc">Spring, summer, fall, winter.</span>
+  </a>
+  <a class="tab-card" href="{{ "/colors/" | relURL }}">
+    <span class="tab-eyebrow">Filter by</span>
+    <span class="tab-title">Colors</span>
+    <span class="tab-desc">Group items by palette.</span>
+  </a>
+  <a class="tab-card" href="{{ "/outfits/" | relURL }}">
+    <span class="tab-eyebrow">Styled</span>
+    <span class="tab-title">Outfits</span>
+    <span class="tab-desc">Curated looks and combinations.</span>
+  </a>
+</section>
+
+{{ with .Site.RegularPages }}
+<section class="recent">
+  <h2>Recently added</h2>
+  <div class="grid">
+    {{ range first 8 (where . "Type" "in" (slice "categories" "outfits" "seasons" "colors")) }}
+      {{ partial "item-card.html" . }}
+    {{ end }}
+  </div>
+</section>
+{{ end }}
+{{ end }}
