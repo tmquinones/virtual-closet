@@ -8,15 +8,16 @@
 
   {{ with .Params.image }}
     <figure class="item-figure">
-      <img src="{{ . | relURL }}" alt="{{ $.Title }}">
+      <img src="{{ strings.TrimPrefix "/" . | relURL }}" alt="{{ $.Title }}">
     </figure>
   {{ end }}
 
   <dl class="item-meta">
     {{ with .Params.color }}<dt>Color</dt><dd>{{ . }}</dd>{{ end }}
     {{ with .Params.size }}<dt>Size</dt><dd>{{ . }}</dd>{{ end }}
-    {{ with .Params.season }}<dt>Season</dt><dd>{{ delimit . ", " }}</dd>{{ end }}
+    {{ with .Params.seasons }}<dt>Seasons</dt><dd>{{ delimit . ", " }}</dd>{{ end }}
     {{ with .Params.tags }}<dt>Tags</dt><dd>{{ delimit . ", " }}</dd>{{ end }}
+    {{ with .Params.purchaseDate }}<dt>Purchased</dt><dd>{{ . }}</dd>{{ end }}
   </dl>
 
   <div class="item-body">

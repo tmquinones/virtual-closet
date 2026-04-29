@@ -1,6 +1,6 @@
 <a class="card" href="{{ .RelPermalink }}">
   {{ with .Params.image }}
-    <div class="card-img"><img src="{{ . | relURL }}" alt="{{ $.Title }}" loading="lazy"></div>
+    <div class="card-img"><img src="{{ strings.TrimPrefix "/" . | relURL }}" alt="{{ $.Title }}" loading="lazy"></div>
   {{ else }}
     <div class="card-img card-img-empty"><span>{{ substr $.Title 0 1 }}</span></div>
   {{ end }}
