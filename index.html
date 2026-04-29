@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Virtual Closet</title>
+  <link rel="stylesheet" href="styles.css?v=1777342658875" />
+  <link rel="stylesheet" href="editorial.css?v=1777491249174" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#1c1c1c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Closet" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">VC</div>
+        <div class="brand-text">
+          <div class="brand-title">Virtual Closet</div>
+          <div class="brand-subtitle" id="itemCount">0 pieces</div>
+        </div>
+        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Open menu">≡</button>
+      </div>
+      <div class="sidebar-user" id="sidebarUser" hidden>
+        <span class="sidebar-user-name" id="sidebarUserName"></span>
+        <button class="btn btn-ghost btn-sm" id="signOutBtn" title="Sign out">Sign out</button>
+      </div>
+
+      <nav class="nav">
+        <a href="#/browse" class="nav-link" data-route="browse">
+          <span class="nav-icon">▦</span>
+          <span>Shop By</span>
+        </a>
+        <a href="#/closet" class="nav-link" data-route="closet">
+          <span class="nav-icon">▢</span>
+          <span>Closet</span>
+        </a>
+        <a href="#/insights" class="nav-link" data-route="insights">
+          <span class="nav-icon">◎</span>
+          <span>Insights</span>
+        </a>
+        <a href="#/girlmath" class="nav-link" data-route="girlmath">
+          <span class="nav-icon">$</span>
+          <span>Girl Math</span>
+        </a>
+        <a href="#/add" class="nav-link" data-route="add">
+          <span class="nav-icon">+</span>
+          <span>Add Item</span>
+        </a>
+        <a href="#/wishlist" class="nav-link" data-route="wishlist">
+          <span class="nav-icon">★</span>
+          <span>Wishlist</span>
+        </a>
+                <a href="#/capsule" class="nav-link" data-route="capsule">
+          <span class="nav-icon">▥</span>
+          <span>Capsule</span>
+        </a>
+        <a href="#/returned" class="nav-link" data-route="returned">
+          <span class="nav-icon">↩</span>
+          <span>Returned</span>
+        </a>
+        <a href="#/compare" class="nav-link" data-route="compare">
+          <span class="nav-icon">⇄</span>
+          <span>Compare</span>
+        </a>
+        <a href="#/outfits" class="nav-link" data-route="outfits">
+          <span class="nav-icon">◇</span>
+          <span>Outfits</span>
+        </a>
+        <a href="#/trip" class="nav-link" data-route="trip">
+          <span class="nav-icon">✈</span>
+          <span>Trip Planner</span>
+        </a>
+        <a href="#/build" class="nav-link" data-route="build">
+          <span class="nav-icon">✦</span>
+          <span>Build Outfit</span>
+        </a>
+        <a href="#/daily" class="nav-link" data-route="daily">
+          <span class="nav-icon">☼</span>
+          <span>Daily Log</span>
+        </a>
+        <a href="#/slideshow" class="nav-link" data-route="slideshow">
+          <span class="nav-icon">▷</span>
+          <span>Wear Log</span>
+        </a>
+        <a href="#/receipts" class="nav-link" data-route="receipts">
+          <span class="nav-icon">⎙</span>
+          <span>Receipts</span>
+        </a>
+        <a href="#/notes" class="nav-link" data-route="notes">
+          <span class="nav-icon">✎</span>
+          <span>My Notes</span>
+        </a>
+        <a href="#/returns-due" class="nav-link" data-route="returns-due">
+          <span class="nav-icon">⏰</span>
+          <span>Returns Due</span>
+        </a>
+        <a href="#/shop" class="nav-link" data-route="shop">
+          <span class="nav-icon">🛍</span>
+          <span>Shop</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="theme-toggle" id="themeToggle">
+          <button data-theme="theme-bw" class="active">B&amp;W</button>
+          <button data-theme="theme-warm">Warm</button>
+          <button data-theme="theme-dark">Dark</button>
+        </div>
+        <button class="btn btn-ghost btn-block" id="exportBtn">Export Backup</button>
+        <label class="btn btn-ghost btn-block" for="importInput">Import Backup</label>
+        <input type="file" id="importInput" accept="application/json" hidden />
+      </div>
+    </aside>
+
+    <main class="main" id="main">
+      <!-- Views render here -->
+    </main>
+  </div>
+
+  
+  <!-- Login screen (full-screen overlay shown when no session) -->
+  <div class="login-overlay" id="loginOverlay" hidden>
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand-mark">VC</div>
+        <div>
+          <div class="login-brand-title">Virtual Closet</div>
+          <div class="login-brand-tag">Wear what you have. Buy what you love.</div>
+        </div>
+      </div>
+      <div class="login-tabs">
+        <button class="login-tab active" data-tab="signin">Sign in</button>
+        <button class="login-tab" data-tab="signup">Create account</button>
+      </div>
+      <form class="login-form" id="loginForm" autocomplete="off">
+        <div class="field">
+          <label class="field-label" for="loginUsername">Username</label>
+          <input class="input" id="loginUsername" type="text" autocapitalize="none" required />
+        </div>
+        <div class="field">
+          <label class="field-label" for="loginPassword">Password</label>
+          <input class="input" id="loginPassword" type="password" required />
+        </div>
+        <div class="login-error" id="loginError" hidden></div>
+        <button class="btn btn-primary btn-block" id="loginSubmit" type="submit">Sign in</button>
+        <p class="login-footnote" id="loginFootnote">
+          Accounts are stored on this device only. Each account has its own private closet.
+        </p>
+      </form>
+    </div>
+  </div>
+  <!-- Item detail modal -->
+  <div class="modal" id="modal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel" id="modalPanel">
+      <button class="modal-close" data-close aria-label="Close">×</button>
+      <div class="modal-content" id="modalContent"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" hidden></div>
+  <script src="dist/app.bundle.js?v=1777491249174"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
