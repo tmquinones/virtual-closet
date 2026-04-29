@@ -1,7 +1,6 @@
 baseURL = "https://tmquinones.github.io/virtual-closet/"
 languageCode = "en-us"
 title = "Virtual Closet"
-theme = ""
 
 # IMPORTANT: change baseURL above after you create your repo.
 # If your repo is named the same as your username (e.g. yourname.github.io),
