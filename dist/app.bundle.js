@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-04-30 23:00:36 */
+/* Virtual Closet bundle — built 2026-04-30 23:12:38 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -7013,22 +7013,36 @@ window.addEventListener('DOMContentLoaded', () => {
 // Two presets ship out of the box:
 //   - lifestyle: standard everyday capsule
 //   - athletics: sport-flavored capsule with different default counts
-// User can override targets in the editor regardless of preset.
 //
 // 2026-04-29 refinements:
 //   * Tops split into long sleeve / short sleeve / tank top
 //   * Outerwear picker pulls from outerwear + layering subtypes in tops
-//     (sweater, cardigan, hoodie, blazer) so layering pieces aren't
-//     orphaned just because they're tagged as Tops
 //   * Intimates & Swim picker shows the entire closet
 //   * Item picker supports multi-select up to 30 at a time
+//
+// 2026-04-30 additions:
+//   * Pajamas category for sleepwear (filters by subtype/lifestyle/tag)
+//   * Generate 30-day outfit rotation from any saved capsule
 
 (function() {
-  // Each category has a target count, a label, and an item-filter function.
-  // Filter receives the active items array and returns those eligible for
-  // that section.
   const SHORT_SLEEVE_SUBTYPES = new Set(['T-shirt', 'Blouse', 'Shirt', 'Polo']);
   const LAYERING_SUBTYPES_IN_TOPS = new Set(['Sweater', 'Cardigan', 'Hoodie', 'Blazer', 'Jacket', 'Coat', 'Parka', 'Vest']);
+  const PAJAMA_SUBTYPES = new Set(['Pajamas', 'Robe', 'Camisole', 'Slip']);
+
+  // Pajama eligibility: subtype is sleepwear, OR loungewear lifestyle,
+  // OR the item is tagged pajama/sleep/pj/loungewear.
+  function isPajamaItem(it) {
+    if (!it) return false;
+    if (PAJAMA_SUBTYPES.has(it.subtype)) return true;
+    if (Array.isArray(it.lifestyleCategories) && it.lifestyleCategories.includes('loungewear')) return true;
+    if (Array.isArray(it.tags)) {
+      for (const t of it.tags) {
+        const lower = String(t).toLowerCase();
+        if (lower.includes('pajama') || lower.includes('sleep') || lower === 'pj' || lower.includes('loungewear')) return true;
+      }
+    }
+    return false;
+  }
 
   const CATEGORY_DEFS = {
     tops_long: {
@@ -7052,17 +7066,17 @@ window.addEventListener('DOMContentLoaded', () => {
       filter: it => it.garmentType === 'dresses',
     },
     outerwear: {
-      // Outerwear pulls from outerwear category PLUS layering pieces
-      // tagged as tops (sweater/cardigan/hoodie/blazer)
       label: 'Outerwear & Layers',
       filter: it => it.garmentType === 'outerwear'
                  || (it.garmentType === 'tops' && LAYERING_SUBTYPES_IN_TOPS.has(it.subtype)),
     },
     intimates_swim: {
-      // Anything in the closet — bras might be tagged as tops, swim might
-      // be its own category, etc. Let user pick freely.
       label: 'Intimates & Swim',
       filter: () => true,
+    },
+    pajamas: {
+      label: 'Pajamas (top & bottom)',
+      filter: isPajamaItem,
     },
     shoes: {
       label: 'Shoes',
@@ -7072,9 +7086,7 @@ window.addEventListener('DOMContentLoaded', () => {
       label: 'Accessories',
       filter: it => it.garmentType === 'accessories',
     },
-    // Backward-compat: legacy capsules saved before the tops split used
-    // a single 'tops' key. Render those rows using the broad filter so
-    // existing data still displays.
+    // Backward-compat for legacy capsules
     tops: {
       label: 'Tops (legacy)',
       filter: it => it.garmentType === 'tops',
@@ -7093,6 +7105,7 @@ window.addEventListener('DOMContentLoaded', () => {
         dresses: 1,
         outerwear: 1,
         intimates_swim: 0,
+        pajamas: 2,
         shoes: 2,
         accessories: 3,
       },
@@ -7108,6 +7121,7 @@ window.addEventListener('DOMContentLoaded', () => {
         dresses: 0,
         outerwear: 2,
         intimates_swim: 0,
+        pajamas: 0,
         shoes: 2,
         accessories: 2,
       },
@@ -7117,7 +7131,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const DEFAULT_TARGETS = PRESETS.lifestyle.targets;
   let editingId = null;
   let editingCapsule = null;
-  // Multi-select state for the item picker
   const MAX_PICK_PER_OPERATION = 30;
   let pickerSelectedIds = new Set();
   let pickerCat = null;
@@ -7142,7 +7155,6 @@ window.addEventListener('DOMContentLoaded', () => {
           around a neutral base, your real lifestyle, and quality fabrics.
           The goal: more outfits from fewer items.
         </p>
-
         <div class="capsule-intro-grid">
           <div>
             <div class="capsule-intro-h">Common categories</div>
@@ -7152,7 +7164,7 @@ window.addEventListener('DOMContentLoaded', () => {
               <li><strong>Layers</strong> — 3–5 (blazers, cardigans, jackets)</li>
               <li><strong>Dresses</strong> — 2–3 (LBD, shirt dress)</li>
               <li><strong>Shoes</strong> — 4–7 pairs (sneakers, boots, flats, heel)</li>
-              <li><strong>Accessories &amp; outerwear</strong> — bag, scarf, belt, coat</li>
+              <li><strong>Pajamas</strong> — 2–3 sets (top &amp; bottom)</li>
             </ul>
           </div>
           <div>
@@ -7164,9 +7176,8 @@ window.addEventListener('DOMContentLoaded', () => {
             </ul>
           </div>
         </div>
-
         <div class="capsule-intro-foot muted" style="margin-top: 12px; font-size: 12px;">
-          Pick a preset below (Lifestyle or Athletics) — you can always tweak the target counts.
+          Pick a preset (Lifestyle or Athletics), tweak the targets, drop in pieces, then click Generate 30-day rotation to see daily outfits.
         </div>
       </div>
     `;
@@ -7195,7 +7206,7 @@ window.addEventListener('DOMContentLoaded', () => {
       ${capsules.length === 0 ? `
         <div class="empty">
           <div class="empty-title">No capsules yet</div>
-          <p>Set targets per category (e.g. 5 tops, 3 bottoms, 2 shoes) and pick the pieces that fit. Save multiple capsules for trips, seasons, or work vs weekend.</p>
+          <p>Set targets per category, drop in pieces, and once you have a capsule saved, click "Generate 30-day rotation" to see day-by-day outfits.</p>
           <button class="btn btn-primary" id="cap_new_empty">+ Build your first capsule</button>
         </div>
       ` : `
@@ -7209,6 +7220,14 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cap_new_empty')?.addEventListener('click', () => openPresetPicker());
     main.querySelectorAll('[data-edit-capsule]').forEach(b => {
       b.addEventListener('click', () => openEditor(Number(b.dataset.editCapsule)));
+    });
+    main.querySelectorAll('[data-rotate-capsule]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const id = Number(b.dataset.rotateCapsule);
+        const all = await dbGetAllCapsules();
+        const c = all.find(x => x.id === id);
+        if (c) openRotationModal(c);
+      });
     });
     main.querySelectorAll('[data-delete-capsule]').forEach(b => {
       b.addEventListener('click', async () => {
@@ -7239,7 +7258,8 @@ window.addEventListener('DOMContentLoaded', () => {
           }).join('')}
         </div>
         <div class="row" style="gap: 8px; margin-top: 12px;">
-          <button class="btn" data-edit-capsule="${c.id}">Edit</button>
+          <button class="btn btn-primary btn-sm" data-rotate-capsule="${c.id}">✨ Generate 30-day rotation</button>
+          <button class="btn btn-sm" data-edit-capsule="${c.id}">Edit</button>
           <button class="btn btn-ghost btn-sm" data-delete-capsule="${c.id}">Delete</button>
         </div>
       </div>
@@ -7315,6 +7335,7 @@ window.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="row" style="gap: 8px;">
           <button class="btn" id="cap_back">Back</button>
+          ${editingId ? '<button class="btn" id="cap_rotate">✨ Generate rotation</button>' : ''}
           <button class="btn btn-primary" id="cap_save">${editingId ? 'Save changes' : 'Save capsule'}</button>
         </div>
       </div>
@@ -7395,6 +7416,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('cap_back').addEventListener('click', () => render(main));
     document.getElementById('cap_save').addEventListener('click', saveCapsule);
+    document.getElementById('cap_rotate')?.addEventListener('click', () => openRotationModal(editingCapsule));
   }
 
   function slotItemHtml(it, cat) {
@@ -7413,12 +7435,10 @@ window.addEventListener('DOMContentLoaded', () => {
     if (typeof openModal !== 'function') return;
     pickerCat = cat;
     pickerSelectedIds = new Set();
-
     const all = await dbGetAllItems();
     const active = (typeof activeItems === 'function') ? activeItems(all) : all;
     const eligible = filterForCategory(cat, active);
     pickerCachedItems = eligible;
-
     renderPickerModal();
   }
 
@@ -7434,9 +7454,7 @@ window.addEventListener('DOMContentLoaded', () => {
         click cards to select up to ${MAX_PICK_PER_OPERATION} at a time
       </div>
       <div class="cmp-picker-toolbar" style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius);">
-        <span id="picker-count" style="font-size: 13px; font-weight: 500;">
-          0 selected
-        </span>
+        <span id="picker-count" style="font-size: 13px; font-weight: 500;">0 selected</span>
         <span class="muted" style="font-size: 11px;">/ max ${MAX_PICK_PER_OPERATION}</span>
         <div class="spacer" style="flex: 1;"></div>
         <button class="btn btn-ghost btn-sm" id="picker-select-visible">Select all</button>
@@ -7470,11 +7488,8 @@ window.addEventListener('DOMContentLoaded', () => {
         doneEl.disabled = n === 0;
       }
     }
-
     function toggleCard(card, id) {
-      // Don't toggle items already in the capsule (they show as ✓ in capsule)
       if (card.classList.contains('cmp-already')) {
-        // Allow removing them by clicking — sets a "remove" state
         if (pickerSelectedIds.has(id)) {
           pickerSelectedIds.delete(id);
           card.classList.remove('picker-selected-remove');
@@ -7500,22 +7515,16 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     document.querySelectorAll('[data-pick-cat-id]').forEach(card => {
-      card.addEventListener('click', () => {
-        const id = Number(card.dataset.pickCatId);
-        toggleCard(card, id);
-      });
+      card.addEventListener('click', () => toggleCard(card, Number(card.dataset.pickCatId)));
     });
-
     document.getElementById('picker-select-visible')?.addEventListener('click', () => {
       const cards = document.querySelectorAll('[data-pick-cat-id]:not(.cmp-already)');
-      let added = 0;
       cards.forEach(card => {
         if (pickerSelectedIds.size >= MAX_PICK_PER_OPERATION) return;
         const id = Number(card.dataset.pickCatId);
         if (!pickerSelectedIds.has(id)) {
           pickerSelectedIds.add(id);
           card.classList.add('picker-selected');
-          added++;
         }
       });
       refreshCount();
@@ -7523,7 +7532,6 @@ window.addEventListener('DOMContentLoaded', () => {
         showToast(`Selected first ${MAX_PICK_PER_OPERATION} (max per round).`);
       }
     });
-
     document.getElementById('picker-clear')?.addEventListener('click', () => {
       pickerSelectedIds.clear();
       document.querySelectorAll('[data-pick-cat-id]').forEach(c => {
@@ -7531,12 +7539,9 @@ window.addEventListener('DOMContentLoaded', () => {
       });
       refreshCount();
     });
-
     document.getElementById('picker-done')?.addEventListener('click', () => {
       if (!editingCapsule.slots[cat]) editingCapsule.slots[cat] = [];
       const slot = editingCapsule.slots[cat];
-      // For items already in capsule that are now flagged for removal, remove them.
-      // For items not in capsule that are flagged for adding, add them.
       const alreadyInSlot = new Set(slot);
       const toRemove = [];
       const toAdd = [];
@@ -7544,9 +7549,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (alreadyInSlot.has(id)) toRemove.push(id);
         else toAdd.push(id);
       });
-      const newSlot = slot
-        .filter(id => !toRemove.includes(id))
-        .concat(toAdd);
+      const newSlot = slot.filter(id => !toRemove.includes(id)).concat(toAdd);
       editingCapsule.slots[cat] = newSlot;
       pickerSelectedIds.clear();
       pickerCachedItems = null;
@@ -7580,6 +7583,193 @@ window.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       alert('Save failed: ' + (e?.message || e));
     }
+  }
+
+  // ============================================================
+  // 30-day outfit rotation generator
+  // ============================================================
+  // Algorithm: pulls items out of each capsule slot, then for each day
+  // 1..30 picks a coherent outfit using round-robin indices with
+  // prime-number offsets so combinations don't repeat in lockstep.
+  // ============================================================
+  function generateRotation(capsule, itemMap) {
+    const slot = (k) => (capsule.slots?.[k] || [])
+      .map(id => itemMap.get(id))
+      .filter(Boolean);
+
+    // Combine all top categories (long/short/tank + legacy)
+    const tops = [
+      ...slot('tops_long'),
+      ...slot('tops_short'),
+      ...slot('tops_tank'),
+      ...slot('tops'),  // legacy
+    ];
+    const bottoms = slot('bottoms');
+    const dresses = slot('dresses');
+    const outerwear = slot('outerwear');
+    const shoes = slot('shoes');
+    const accessories = slot('accessories');
+    const pajamas = slot('pajamas');
+
+    const totalAvailable = tops.length + bottoms.length + dresses.length;
+    const days = [];
+
+    for (let i = 0; i < 30; i++) {
+      const day = i + 1;
+      // Use prime offsets for variety
+      const useDress = dresses.length > 0 && i % 4 === 3;
+      const useOuter = outerwear.length > 0 && (i % 3 === 0 || i % 5 === 2);
+      const useAcc = accessories.length > 0;
+
+      const outfit = {
+        day,
+        items: [],
+      };
+
+      if (useDress) {
+        outfit.items.push({ role: 'Dress', item: dresses[i % dresses.length] });
+      } else {
+        if (tops.length > 0) {
+          outfit.items.push({ role: 'Top', item: tops[i % tops.length] });
+        }
+        if (bottoms.length > 0) {
+          outfit.items.push({ role: 'Bottom', item: bottoms[(i * 3) % bottoms.length] });
+        }
+      }
+      if (useOuter) {
+        outfit.items.push({ role: 'Layer', item: outerwear[(Math.floor(i / 3)) % outerwear.length] });
+      }
+      if (shoes.length > 0) {
+        outfit.items.push({ role: 'Shoes', item: shoes[(i * 7) % shoes.length] });
+      }
+      if (useAcc) {
+        outfit.items.push({ role: 'Accent', item: accessories[i % accessories.length] });
+      }
+      days.push(outfit);
+    }
+
+    // Optional pajama rotation — if the capsule has pajamas, also build a
+    // 30-day pajama rotation (gets shown in a separate strip below the
+    // main outfits).
+    let pajamaDays = [];
+    if (pajamas.length > 0) {
+      for (let i = 0; i < 30; i++) {
+        pajamaDays.push({
+          day: i + 1,
+          item: pajamas[i % pajamas.length],
+        });
+      }
+    }
+
+    return {
+      days,
+      pajamaDays,
+      stats: {
+        tops: tops.length,
+        bottoms: bottoms.length,
+        dresses: dresses.length,
+        outerwear: outerwear.length,
+        shoes: shoes.length,
+        accessories: accessories.length,
+        pajamas: pajamas.length,
+      },
+    };
+  }
+
+  async function openRotationModal(capsule) {
+    if (typeof openModal !== 'function') return;
+    const items = await dbGetAllItems();
+    const itemMap = new Map(items.map(i => [i.id, i]));
+    const rotation = generateRotation(capsule, itemMap);
+
+    const minNeeded = (rotation.stats.tops + rotation.stats.dresses) > 0
+                   && (rotation.stats.bottoms > 0 || rotation.stats.dresses > 0);
+    if (!minNeeded) {
+      openModal(`
+        <h2 style="margin: 0 0 8px;">Not enough pieces yet</h2>
+        <div class="muted" style="font-size: 13px; line-height: 1.5;">
+          To generate a 30-day rotation, this capsule needs at least one
+          top + bottom (or one dress). Right now it has:
+        </div>
+        <ul style="font-size: 13px;">
+          <li>${rotation.stats.tops} top${rotation.stats.tops === 1 ? '' : 's'}</li>
+          <li>${rotation.stats.bottoms} bottom${rotation.stats.bottoms === 1 ? '' : 's'}</li>
+          <li>${rotation.stats.dresses} dress${rotation.stats.dresses === 1 ? '' : 'es'}</li>
+        </ul>
+        <button class="btn btn-primary" data-close>OK</button>
+      `);
+      return;
+    }
+
+    openModal(`
+      <h2 style="margin: 0 0 6px; font-family: 'Playfair Display', serif;">
+        ✨ 30-Day Rotation — ${escapeHtml(capsule.name || 'Capsule')}
+      </h2>
+      <div class="muted" style="font-size: 12px; margin-bottom: 14px;">
+        ${rotation.stats.tops} tops · ${rotation.stats.bottoms} bottoms · ${rotation.stats.dresses} dresses · ${rotation.stats.outerwear} layers · ${rotation.stats.shoes} shoes · ${rotation.stats.accessories} accessories${rotation.stats.pajamas ? ' · ' + rotation.stats.pajamas + ' pajama sets' : ''}
+      </div>
+
+      <div class="rotation-grid">
+        ${rotation.days.map(d => rotationDayHtml(d)).join('')}
+      </div>
+
+      ${rotation.pajamaDays.length > 0 ? `
+        <h3 style="font-family: 'Playfair Display', serif; margin: 20px 0 10px;">
+          🌙 30-Day Pajama Rotation
+        </h3>
+        <div class="rotation-pajama-strip">
+          ${rotation.pajamaDays.map(p => {
+            const url = p.item.thumb ? blobToUrl(p.item.thumb) : (p.item.photo ? blobToUrl(p.item.photo) : '');
+            return `
+              <div class="rotation-pajama-card" title="${escapeHtml(p.item.name || p.item.subtype || '')}">
+                <div class="rotation-pajama-day">D${p.day}</div>
+                <div class="rotation-pajama-thumb" style="background-image:url('${url}')"></div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      ` : ''}
+
+      <div class="row" style="gap: 8px; margin-top: 16px;">
+        <button class="btn" data-close>Close</button>
+        <div class="spacer" style="flex: 1;"></div>
+        <button class="btn btn-primary" id="rotation-regenerate">Regenerate (shuffle)</button>
+      </div>
+    `);
+
+    document.getElementById('rotation-regenerate')?.addEventListener('click', () => {
+      // Re-shuffle by tweaking the offset — simple approach: rotate the
+      // capsule slot arrays and regenerate.
+      const shuffled = JSON.parse(JSON.stringify(capsule));
+      Object.keys(shuffled.slots || {}).forEach(k => {
+        const arr = shuffled.slots[k];
+        if (Array.isArray(arr) && arr.length > 1) {
+          const offset = Math.floor(Math.random() * arr.length);
+          shuffled.slots[k] = arr.slice(offset).concat(arr.slice(0, offset));
+        }
+      });
+      closeModal();
+      setTimeout(() => openRotationModal(shuffled), 100);
+    });
+  }
+
+  function rotationDayHtml(day) {
+    return `
+      <div class="rotation-day-card">
+        <div class="rotation-day-num">Day ${day.day}</div>
+        <div class="rotation-day-items">
+          ${day.items.map(({ role, item }) => {
+            const url = item.thumb ? blobToUrl(item.thumb) : (item.photo ? blobToUrl(item.photo) : '');
+            return `
+              <div class="rotation-day-item" title="${escapeHtml((item.name || item.subtype || '') + ' · ' + role)}">
+                <div class="rotation-day-thumb" style="background-image:url('${url}')"></div>
+                <div class="rotation-day-role muted">${escapeHtml(role)}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
   }
 
   window.renderCapsuleView = function(main) { return render(main); };

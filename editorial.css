@@ -2501,3 +2501,77 @@ body.theme-dark .slide-tiny-thumb {
   font-size: 16px;
   line-height: 1;
 }
+
+/* ==================================================================
+   30-day rotation generator (Phase 28)
+   ================================================================== */
+.rotation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.rotation-day-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+.rotation-day-num {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+.rotation-day-items {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.rotation-day-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.rotation-day-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--surface-2);
+  border-radius: 2px;
+}
+.rotation-day-role {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Pajama strip — horizontal scroll */
+.rotation-pajama-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.rotation-pajama-card {
+  flex: 0 0 80px;
+  text-align: center;
+}
+.rotation-pajama-day {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.rotation-pajama-thumb {
+  width: 80px;
+  height: 80px;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--surface-2);
+  border-radius: 4px;
+}
