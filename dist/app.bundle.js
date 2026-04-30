@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-04-30 00:44:45 */
+/* Virtual Closet bundle — built 2026-04-30 01:03:52 */
 /* Sources: 34 files */
 
 
@@ -8829,27 +8829,49 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  let _uploadInFlight = false;
   async function uploadBackup() {
-    const cfg = getConfig();
-    if (!cfg || !cfg.token) throw new Error('GitHub Sync not configured');
-    const data = await dbExportAll();
-    const json = JSON.stringify(data);
-    const sha = await getCurrentSha();
-    const body = {
-      message: 'Auto-backup ' + new Date().toISOString(),
-      content: utf8ToB64(json),
-      branch: cfg.branch
-    };
-    if (sha) body.sha = sha;
-    await ghApi(
-      `/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(cfg.path)}`,
-      { method: 'PUT', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }
-    );
-    cfg.lastBackupAt = Date.now();
-    cfg.lastBackupSize = json.length;
-    cfg.lastError = null;
-    saveConfig(cfg);
-    return { size: json.length, when: cfg.lastBackupAt };
+    if (_uploadInFlight) {
+      throw new Error('A backup is already in progress — wait a moment and try again');
+    }
+    _uploadInFlight = true;
+    try {
+      const cfg = getConfig();
+      if (!cfg || !cfg.token) throw new Error('GitHub Sync not configured');
+      const data = await dbExportAll();
+      const json = JSON.stringify(data);
+      const doPut = async (sha) => {
+        const body = {
+          message: 'Auto-backup ' + new Date().toISOString(),
+          content: utf8ToB64(json),
+          branch: cfg.branch
+        };
+        if (sha) body.sha = sha;
+        return ghApi(
+          `/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(cfg.path)}`,
+          { method: 'PUT', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }
+        );
+      };
+      let sha = await getCurrentSha();
+      try {
+        await doPut(sha);
+      } catch (err) {
+        // SHA mismatch — file changed between GET and PUT. Re-fetch SHA and try once more.
+        if (/does not match|conflict/i.test(err.message)) {
+          sha = await getCurrentSha();
+          await doPut(sha);
+        } else {
+          throw err;
+        }
+      }
+      cfg.lastBackupAt = Date.now();
+      cfg.lastBackupSize = json.length;
+      cfg.lastError = null;
+      saveConfig(cfg);
+      return { size: json.length, when: cfg.lastBackupAt };
+    } finally {
+      _uploadInFlight = false;
+    }
   }
 
   async function maybeAutoBackup() {
