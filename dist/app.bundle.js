@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-04-30 00:01:45 */
-/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js */
+/* Virtual Closet bundle — built 2026-04-30 00:08:49 */
+/* Sources: 33 files */
 
 
 /* ===== js/data-r9.js ===== */
@@ -260,9 +260,17 @@ async function makeThumbnail(file, maxDim = 800, quality = 0.88) {
 const _urlCache = new WeakMap();
 function blobToUrl(blob) {
   if (!blob) return '';
+  // Accept already-resolved URLs (data: or blob: strings) directly
+  if (typeof blob === 'string') return blob;
   let url = _urlCache.get(blob);
   if (!url) {
-    url = URL.createObjectURL(blob);
+    try {
+      url = URL.createObjectURL(blob);
+    } catch (err) {
+      // Defensive: if input wasn't a Blob (corrupted record), fail soft
+      console.warn('blobToUrl: createObjectURL failed', err, blob);
+      return '';
+    }
     _urlCache.set(blob, url);
   }
   return url;
