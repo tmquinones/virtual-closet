@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-04-30 00:20:09 */
-/* Sources: 33 files */
+/* Virtual Closet bundle — built 2026-04-30 00:44:45 */
+/* Sources: 34 files */
 
 
 /* ===== js/data-r9.js ===== */
@@ -8750,4 +8750,255 @@ window.addEventListener('DOMContentLoaded', () => {
   } else {
     init();
   }
+})();
+
+
+/* ===== js/github-sync-r1.js ===== */
+// github-sync-r1.js — daily auto-backup of the closet to a GitHub repo.
+//
+// Stores a fine-grained PAT in localStorage as 'vc:githubSync'. On every
+// app load, if >24h since last successful backup, exports the closet
+// (using dbExportAll) and PUTs it to data/backup-latest.json in the repo
+// via GitHub's REST API. Also exposes a manual "Backup now" button via a
+// settings modal opened from the sidebar.
+
+(function() {
+  const LS_KEY = 'vc:githubSync';
+  const DEFAULT_OWNER  = 'tmquinones';
+  const DEFAULT_REPO   = 'virtual-closet';
+  const DEFAULT_BRANCH = 'main';
+  const DEFAULT_PATH   = 'data/backup-latest.json';
+  const AUTO_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
+
+  function getConfig() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (_) { return null; }
+  }
+  function saveConfig(cfg) {
+    localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+  }
+  function clearConfig() {
+    localStorage.removeItem(LS_KEY);
+  }
+
+  // Convert a string to base64 (handles unicode safely)
+  function utf8ToB64(str) {
+    return btoa(unescape(encodeURIComponent(str)));
+  }
+
+  async function ghApi(path, opts = {}) {
+    const cfg = getConfig();
+    if (!cfg || !cfg.token) throw new Error('GitHub Sync not configured');
+    const headers = Object.assign({
+      'Accept': 'application/vnd.github+json',
+      'Authorization': 'Bearer ' + cfg.token,
+      'X-GitHub-Api-Version': '2022-11-28',
+    }, opts.headers || {});
+    const res = await fetch('https://api.github.com' + path, {
+      ...opts,
+      headers,
+    });
+    const text = await res.text();
+    let body;
+    try { body = text ? JSON.parse(text) : null; }
+    catch (_) { body = text; }
+    if (!res.ok) {
+      const msg = (body && body.message) ? body.message : ('HTTP ' + res.status);
+      throw new Error(msg);
+    }
+    return body;
+  }
+
+  // Fetch the current SHA of the file (needed by the PUT call to update an
+  // existing file). Returns null if the file doesn't exist yet.
+  async function getCurrentSha() {
+    const cfg = getConfig();
+    try {
+      const data = await ghApi(
+        `/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(cfg.path)}?ref=${encodeURIComponent(cfg.branch)}`,
+        { method: 'GET' }
+      );
+      return data && data.sha ? data.sha : null;
+    } catch (err) {
+      // 404 = file doesn't exist, that's fine on first backup
+      if (/Not Found/i.test(err.message)) return null;
+      throw err;
+    }
+  }
+
+  async function uploadBackup() {
+    const cfg = getConfig();
+    if (!cfg || !cfg.token) throw new Error('GitHub Sync not configured');
+    const data = await dbExportAll();
+    const json = JSON.stringify(data);
+    const sha = await getCurrentSha();
+    const body = {
+      message: 'Auto-backup ' + new Date().toISOString(),
+      content: utf8ToB64(json),
+      branch: cfg.branch
+    };
+    if (sha) body.sha = sha;
+    await ghApi(
+      `/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(cfg.path)}`,
+      { method: 'PUT', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }
+    );
+    cfg.lastBackupAt = Date.now();
+    cfg.lastBackupSize = json.length;
+    cfg.lastError = null;
+    saveConfig(cfg);
+    return { size: json.length, when: cfg.lastBackupAt };
+  }
+
+  async function maybeAutoBackup() {
+    const cfg = getConfig();
+    if (!cfg || !cfg.token || cfg.autoBackup === false) return;
+    const since = Date.now() - (cfg.lastBackupAt || 0);
+    if (since < AUTO_INTERVAL_MS) return;
+    try {
+      await uploadBackup();
+      if (typeof showToast === 'function') showToast('Auto-backup saved to GitHub');
+    } catch (err) {
+      console.warn('Auto-backup failed:', err);
+      const c = getConfig();
+      if (c) { c.lastError = err.message; saveConfig(c); }
+    }
+  }
+
+  // ===== Settings modal =====
+  function openSyncModal() {
+    const cfg = getConfig() || {
+      owner: DEFAULT_OWNER, repo: DEFAULT_REPO, branch: DEFAULT_BRANCH,
+      path: DEFAULT_PATH, token: '', autoBackup: true
+    };
+    const last = cfg.lastBackupAt
+      ? new Date(cfg.lastBackupAt).toLocaleString()
+      : 'never';
+    const html = `
+      <div class="gh-sync-modal">
+        <h2 style="font-family: 'Playfair Display', serif; margin: 0 0 8px;">GitHub Sync</h2>
+        <p class="muted" style="font-size: 13px; margin: 0 0 16px;">
+          Auto-backs up your closet to <a href="https://github.com/${cfg.owner}/${cfg.repo}" target="_blank" rel="noopener">${cfg.owner}/${cfg.repo}</a> once per day.
+          See <code>GITHUB-SYNC-SETUP.md</code> in your project folder for how to create a token.
+        </p>
+        <div class="field">
+          <label class="field-label" for="ghSyncToken">Personal Access Token</label>
+          <input class="input" id="ghSyncToken" type="password" placeholder="github_pat_..." value="${cfg.token ? cfg.token.replace(/"/g,'&quot;') : ''}">
+          <div class="muted" style="font-size: 11px; margin-top: 4px;">Stored only in this browser's localStorage. Scope: contents:write to ${cfg.owner}/${cfg.repo} only.</div>
+        </div>
+        <details style="margin: 12px 0;">
+          <summary class="muted" style="font-size: 12px; cursor: pointer;">Advanced (owner / repo / branch / path)</summary>
+          <div class="field"><label class="field-label">Owner</label><input class="input" id="ghSyncOwner" value="${cfg.owner}"></div>
+          <div class="field"><label class="field-label">Repo</label><input class="input" id="ghSyncRepo" value="${cfg.repo}"></div>
+          <div class="field"><label class="field-label">Branch</label><input class="input" id="ghSyncBranch" value="${cfg.branch}"></div>
+          <div class="field"><label class="field-label">File path</label><input class="input" id="ghSyncPath" value="${cfg.path}"></div>
+        </details>
+        <div class="field">
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
+            <input type="checkbox" id="ghSyncAuto" ${cfg.autoBackup !== false ? 'checked' : ''}>
+            Auto-backup once per day on app open
+          </label>
+        </div>
+        <div class="muted" style="font-size: 12px; margin: 12px 0;">
+          Last backup: <strong>${last}</strong>${cfg.lastBackupSize ? ` · ${(cfg.lastBackupSize/1024).toFixed(1)} KB` : ''}
+          ${cfg.lastError ? `<br><span style="color:#a02020;">Last error: ${escapeHtml(cfg.lastError)}</span>` : ''}
+        </div>
+        <div class="form-actions" style="display:flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-primary" id="ghSyncSaveBackup">Save &amp; back up now</button>
+          <button class="btn" id="ghSyncBackupOnly">Back up now</button>
+          <button class="btn btn-ghost" id="ghSyncForget">Forget token</button>
+        </div>
+      </div>
+    `;
+    if (typeof showModalHtml === 'function') {
+      showModalHtml(html);
+    } else {
+      // Fallback: build minimal modal manually
+      const m = document.getElementById('modal');
+      const c = document.getElementById('modalContent');
+      if (m && c) { c.innerHTML = html; m.hidden = false; }
+    }
+
+    function readForm() {
+      return {
+        token: (document.getElementById('ghSyncToken').value || '').trim(),
+        owner: (document.getElementById('ghSyncOwner') || {value: cfg.owner}).value.trim() || cfg.owner,
+        repo:  (document.getElementById('ghSyncRepo')  || {value: cfg.repo}).value.trim()  || cfg.repo,
+        branch:(document.getElementById('ghSyncBranch')|| {value: cfg.branch}).value.trim()|| cfg.branch,
+        path:  (document.getElementById('ghSyncPath')  || {value: cfg.path}).value.trim()  || cfg.path,
+        autoBackup: !!document.getElementById('ghSyncAuto').checked,
+        lastBackupAt: cfg.lastBackupAt || 0,
+        lastBackupSize: cfg.lastBackupSize || 0,
+        lastError: cfg.lastError || null,
+      };
+    }
+    async function saveAndBackup() {
+      const next = readForm();
+      if (!next.token) { alert('Paste your token first.'); return; }
+      saveConfig(next);
+      try {
+        const r = await uploadBackup();
+        showToast(`Backup saved (${(r.size/1024).toFixed(1)} KB)`);
+        openSyncModal(); // refresh
+      } catch (err) {
+        alert('Backup failed: ' + err.message);
+      }
+    }
+
+    setTimeout(() => {
+      const sb = document.getElementById('ghSyncSaveBackup');
+      const bo = document.getElementById('ghSyncBackupOnly');
+      const fg = document.getElementById('ghSyncForget');
+      if (sb) sb.addEventListener('click', saveAndBackup);
+      if (bo) bo.addEventListener('click', async () => {
+        saveConfig(readForm());
+        try {
+          const r = await uploadBackup();
+          showToast(`Backup saved (${(r.size/1024).toFixed(1)} KB)`);
+          openSyncModal();
+        } catch (err) { alert('Backup failed: ' + err.message); }
+      });
+      if (fg) fg.addEventListener('click', () => {
+        if (confirm('Remove the saved GitHub token from this browser?')) {
+          clearConfig();
+          showToast('Token forgotten');
+          const m = document.getElementById('modal');
+          if (m) m.hidden = true;
+        }
+      });
+    }, 0);
+  }
+
+  // Wire up sidebar button on DOMContentLoaded
+  function wireSidebar() {
+    const footer = document.querySelector('.sidebar-footer');
+    if (!footer) return;
+    if (document.getElementById('ghSyncBtn')) return; // already wired
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost btn-block';
+    btn.id = 'ghSyncBtn';
+    btn.textContent = 'GitHub Sync';
+    btn.addEventListener('click', openSyncModal);
+    // Insert before the export button so it's grouped with backup features
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) footer.insertBefore(btn, exportBtn);
+    else footer.appendChild(btn);
+  }
+
+  // ===== Boot =====
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      wireSidebar();
+      // Run auto-backup after a short delay so the rest of the app boots first
+      setTimeout(maybeAutoBackup, 4000);
+    });
+  } else {
+    wireSidebar();
+    setTimeout(maybeAutoBackup, 4000);
+  }
+
+  // Expose for debugging
+  window.ghSync = { open: openSyncModal, backup: uploadBackup, config: getConfig };
 })();
