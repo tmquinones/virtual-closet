@@ -2575,3 +2575,63 @@ body.theme-dark .slide-tiny-thumb {
   background-color: var(--surface-2);
   border-radius: 4px;
 }
+
+/* ==================================================================
+   Rotation feedback (Phase 29) — like / dislike / pin
+   ================================================================== */
+.rotation-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+}
+.rotation-train-stats {
+  font-weight: 500;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.rotation-day-actions {
+  display: flex;
+  justify-content: space-around;
+  gap: 4px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+.rotation-fb-btn {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-family: inherit;
+}
+.rotation-fb-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--text);
+}
+.rotation-fb-btn.feedback-active-like {
+  background: #d1f4d1;
+  border-color: #4caf50;
+}
+.rotation-fb-btn.feedback-active-pin {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.rotation-day-card.is-liked {
+  border-color: #4caf50;
+  background: linear-gradient(0deg, rgba(76,175,80,0.04), transparent 60%);
+}
+.rotation-day-card.is-pinned {
+  border-color: var(--text);
+  border-left: 3px solid var(--text);
+}

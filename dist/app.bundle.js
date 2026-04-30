@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-04-30 23:16:55 */
-/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
+/* Virtual Closet bundle — built 2026-04-30 23:31:07 */
+/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -7005,32 +7005,206 @@ window.addEventListener('DOMContentLoaded', () => {
 })();
 
 
+/* ===== js/outfit-feedback-r1.js ===== */
+// outfit-feedback-r1.js — train-the-system feedback for outfit rotations.
+//
+// Stores user thumbs/pins/bad-pairs in localStorage. Both global (applies
+// to every capsule) and per-capsule (overrides global for that one) data
+// is kept. The capsule rotation generator consults this module to:
+//   - Skip outfit signatures the user has thumbs-down'd
+//   - Use pinned outfits for specific days
+//   - Avoid pairs flagged as "bad together" (>=2 strikes)
+//   - Soft-prefer outfit signatures the user has thumbs-up'd
+
+(function() {
+  const LS_KEY = 'vc:outfitFeedback';
+
+  function emptyBucket() {
+    return { liked: [], disliked: [], pinned: {}, badPairs: {} };
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return { global: emptyBucket(), capsules: {} };
+      const data = JSON.parse(raw);
+      if (!data.global) data.global = emptyBucket();
+      if (!data.capsules) data.capsules = {};
+      return data;
+    } catch (_) { return { global: emptyBucket(), capsules: {} }; }
+  }
+
+  function save(data) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(data)); }
+    catch (e) { console.warn('Feedback save failed:', e); }
+  }
+
+  function bucketFor(data, capsuleId) {
+    if (capsuleId == null) return data.global;
+    if (!data.capsules[capsuleId]) data.capsules[capsuleId] = emptyBucket();
+    return data.capsules[capsuleId];
+  }
+
+  // Signature for an outfit — sorted item ids joined.
+  function sig(items) {
+    return (items || [])
+      .map(it => (it && it.id != null) ? it.id : (typeof it === 'number' ? it : null))
+      .filter(x => x != null)
+      .sort((a, b) => a - b)
+      .join('-');
+  }
+
+  // Pair key: smaller id first so order doesn't matter
+  function pairKey(a, b) {
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    return `${lo}:${hi}`;
+  }
+
+  // ===== Public API =====
+
+  function like(capsuleId, items) {
+    const data = load();
+    const s = sig(items);
+    if (!s) return;
+    [data.global, bucketFor(data, capsuleId)].forEach(b => {
+      if (!b.liked.find(x => x.sig === s)) {
+        b.liked.push({ sig: s, ts: Date.now() });
+      }
+    });
+    save(data);
+  }
+
+  function dislike(capsuleId, items) {
+    const data = load();
+    const s = sig(items);
+    if (!s) return;
+    const ids = items.map(it => (it && it.id) || it).filter(x => x != null);
+    [data.global, bucketFor(data, capsuleId)].forEach(b => {
+      if (!b.disliked.find(x => x.sig === s)) {
+        b.disliked.push({ sig: s, ts: Date.now() });
+      }
+      // Add a +1 strike to every pair in this outfit
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          const k = pairKey(ids[i], ids[j]);
+          b.badPairs[k] = (b.badPairs[k] || 0) + 1;
+        }
+      }
+    });
+    save(data);
+  }
+
+  function unvote(capsuleId, items) {
+    const data = load();
+    const s = sig(items);
+    if (!s) return;
+    [data.global, bucketFor(data, capsuleId)].forEach(b => {
+      b.liked = b.liked.filter(x => x.sig !== s);
+      b.disliked = b.disliked.filter(x => x.sig !== s);
+    });
+    save(data);
+  }
+
+  function pinDay(capsuleId, dayNum, items) {
+    if (capsuleId == null) return;  // pinning is per-capsule only
+    const data = load();
+    const b = bucketFor(data, capsuleId);
+    const ids = items.map(it => (it && it.id) || it).filter(x => x != null);
+    b.pinned[dayNum] = { ids, ts: Date.now() };
+    save(data);
+  }
+
+  function unpinDay(capsuleId, dayNum) {
+    if (capsuleId == null) return;
+    const data = load();
+    const b = bucketFor(data, capsuleId);
+    delete b.pinned[dayNum];
+    save(data);
+  }
+
+  function getPinned(capsuleId, dayNum) {
+    if (capsuleId == null) return null;
+    const data = load();
+    const b = bucketFor(data, capsuleId);
+    return b.pinned[dayNum] || null;
+  }
+
+  // Returns true if this outfit signature is disliked anywhere
+  function isDisliked(capsuleId, items) {
+    const data = load();
+    const s = sig(items);
+    if (!s) return false;
+    if (data.global.disliked.find(x => x.sig === s)) return true;
+    const cap = data.capsules[capsuleId];
+    if (cap && cap.disliked.find(x => x.sig === s)) return true;
+    return false;
+  }
+
+  function isLiked(capsuleId, items) {
+    const data = load();
+    const s = sig(items);
+    if (!s) return false;
+    if (data.global.liked.find(x => x.sig === s)) return true;
+    const cap = data.capsules[capsuleId];
+    if (cap && cap.liked.find(x => x.sig === s)) return true;
+    return false;
+  }
+
+  // Returns true if any pair in `items` has accumulated >= threshold strikes
+  // either globally or in this capsule.
+  function hasBadPair(capsuleId, items, threshold = 2) {
+    const data = load();
+    const ids = items.map(it => (it && it.id) || it).filter(x => x != null);
+    const cap = data.capsules[capsuleId];
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const k = pairKey(ids[i], ids[j]);
+        const score = (data.global.badPairs[k] || 0) + ((cap && cap.badPairs[k]) || 0);
+        if (score >= threshold) return true;
+      }
+    }
+    return false;
+  }
+
+  // Summary counts for a capsule (global + capsule-specific)
+  function summary(capsuleId) {
+    const data = load();
+    const cap = data.capsules[capsuleId] || emptyBucket();
+    const liked = data.global.liked.length + cap.liked.length;
+    const disliked = data.global.disliked.length + cap.disliked.length;
+    const pinned = Object.keys(cap.pinned).length;
+    const badPairCount = Object.keys(data.global.badPairs).length + Object.keys(cap.badPairs).length;
+    return { liked, disliked, pinned, badPairCount };
+  }
+
+  // Reset training. Scope: 'global' | 'capsule:<id>' | 'all'
+  function reset(scope, capsuleId) {
+    const data = load();
+    if (scope === 'global' || scope === 'all') {
+      data.global = emptyBucket();
+    }
+    if ((scope === 'capsule' || scope === 'all') && capsuleId != null) {
+      delete data.capsules[capsuleId];
+    }
+    save(data);
+  }
+
+  window.outfitFeedback = {
+    like, dislike, unvote,
+    pinDay, unpinDay, getPinned,
+    isDisliked, isLiked, hasBadPair,
+    summary, reset, sig,
+  };
+})();
+
+
 /* ===== js/capsule-r1.js ===== */
 // capsule-r1.js — Capsule wardrobe planner at #/capsule
-// Per-category target counts. User picks items from their closet into each
-// slot. Multiple named capsules persist in IndexedDB.
-//
-// Two presets ship out of the box:
-//   - lifestyle: standard everyday capsule
-//   - athletics: sport-flavored capsule with different default counts
-//
-// 2026-04-29 refinements:
-//   * Tops split into long sleeve / short sleeve / tank top
-//   * Outerwear picker pulls from outerwear + layering subtypes in tops
-//   * Intimates & Swim picker shows the entire closet
-//   * Item picker supports multi-select up to 30 at a time
-//
-// 2026-04-30 additions:
-//   * Pajamas category for sleepwear (filters by subtype/lifestyle/tag)
-//   * Generate 30-day outfit rotation from any saved capsule
 
 (function() {
   const SHORT_SLEEVE_SUBTYPES = new Set(['T-shirt', 'Blouse', 'Shirt', 'Polo']);
-  const LAYERING_SUBTYPES_IN_TOPS = new Set(['Sweater', 'Cardigan', 'Hoodie', 'Blazer', 'Jacket', 'Coat', 'Parka', 'Vest']);
   const PAJAMA_SUBTYPES = new Set(['Pajamas', 'Robe', 'Camisole', 'Slip']);
 
-  // Pajama eligibility: subtype is sleepwear, OR loungewear lifestyle,
-  // OR the item is tagged pajama/sleep/pj/loungewear.
   function isPajamaItem(it) {
     if (!it) return false;
     if (PAJAMA_SUBTYPES.has(it.subtype)) return true;
@@ -7044,6 +7218,7 @@ window.addEventListener('DOMContentLoaded', () => {
     return false;
   }
 
+  // Outerwear & Layers: includes ALL tops + ALL outerwear (per user request 2026-04-30)
   const CATEGORY_DEFS = {
     tops_long: {
       label: 'Tops — Long sleeve',
@@ -7067,8 +7242,7 @@ window.addEventListener('DOMContentLoaded', () => {
     },
     outerwear: {
       label: 'Outerwear & Layers',
-      filter: it => it.garmentType === 'outerwear'
-                 || (it.garmentType === 'tops' && LAYERING_SUBTYPES_IN_TOPS.has(it.subtype)),
+      filter: it => it.garmentType === 'outerwear' || it.garmentType === 'tops',
     },
     intimates_swim: {
       label: 'Intimates & Swim',
@@ -7086,7 +7260,6 @@ window.addEventListener('DOMContentLoaded', () => {
       label: 'Accessories',
       filter: it => it.garmentType === 'accessories',
     },
-    // Backward-compat for legacy capsules
     tops: {
       label: 'Tops (legacy)',
       filter: it => it.garmentType === 'tops',
@@ -7098,37 +7271,24 @@ window.addEventListener('DOMContentLoaded', () => {
       label: 'Lifestyle',
       tagline: 'Everyday mix-and-match wardrobe',
       targets: {
-        tops_long: 2,
-        tops_short: 2,
-        tops_tank: 1,
-        bottoms: 3,
-        dresses: 1,
-        outerwear: 1,
-        intimates_swim: 0,
-        pajamas: 2,
-        shoes: 2,
-        accessories: 3,
+        tops_long: 2, tops_short: 2, tops_tank: 1,
+        bottoms: 3, dresses: 1, outerwear: 1,
+        intimates_swim: 0, pajamas: 2,
+        shoes: 2, accessories: 3,
       },
     },
     athletics: {
       label: 'Athletics',
       tagline: 'Sport-focused — sweat, lift, run, court',
       targets: {
-        tops_long: 1,
-        tops_short: 3,
-        tops_tank: 2,
-        bottoms: 4,
-        dresses: 0,
-        outerwear: 2,
-        intimates_swim: 0,
-        pajamas: 0,
-        shoes: 2,
-        accessories: 2,
+        tops_long: 1, tops_short: 3, tops_tank: 2,
+        bottoms: 4, dresses: 0, outerwear: 2,
+        intimates_swim: 0, pajamas: 0,
+        shoes: 2, accessories: 2,
       },
     },
   };
 
-  const DEFAULT_TARGETS = PRESETS.lifestyle.targets;
   let editingId = null;
   let editingCapsule = null;
   const MAX_PICK_PER_OPERATION = 30;
@@ -7136,10 +7296,11 @@ window.addEventListener('DOMContentLoaded', () => {
   let pickerCat = null;
   let pickerCachedItems = null;
 
-  function categoryLabel(cat) {
-    return CATEGORY_DEFS[cat]?.label || cat;
-  }
+  // Cache the most recent rotation so feedback buttons can refresh it without
+  // a full regenerate (which would replace just-liked outfits).
+  let _lastRotationContext = null;
 
+  function categoryLabel(cat) { return CATEGORY_DEFS[cat]?.label || cat; }
   function filterForCategory(cat, items) {
     const def = CATEGORY_DEFS[cat];
     if (!def) return items;
@@ -7153,31 +7314,9 @@ window.addEventListener('DOMContentLoaded', () => {
         <p style="margin: 0 0 12px; font-size: 14px; line-height: 1.55;">
           A small, intentional collection of pieces that mix and match — built
           around a neutral base, your real lifestyle, and quality fabrics.
-          The goal: more outfits from fewer items.
         </p>
-        <div class="capsule-intro-grid">
-          <div>
-            <div class="capsule-intro-h">Common categories</div>
-            <ul class="capsule-intro-list">
-              <li><strong>Tops</strong> — 8–12 (tees, tanks, button-downs, blouses)</li>
-              <li><strong>Bottoms</strong> — 5–7 (jeans, trousers, skirts)</li>
-              <li><strong>Layers</strong> — 3–5 (blazers, cardigans, jackets)</li>
-              <li><strong>Dresses</strong> — 2–3 (LBD, shirt dress)</li>
-              <li><strong>Shoes</strong> — 4–7 pairs (sneakers, boots, flats, heel)</li>
-              <li><strong>Pajamas</strong> — 2–3 sets (top &amp; bottom)</li>
-            </ul>
-          </div>
-          <div>
-            <div class="capsule-intro-h">Core principles</div>
-            <ul class="capsule-intro-list">
-              <li><strong>Neutral palette</strong> — black, white, navy, beige for max mix-and-match</li>
-              <li><strong>Quality over quantity</strong> — cotton, wool, linen that lasts</li>
-              <li><strong>Lifestyle-driven</strong> — match your real days (work vs. casual vs. sport)</li>
-            </ul>
-          </div>
-        </div>
-        <div class="capsule-intro-foot muted" style="margin-top: 12px; font-size: 12px;">
-          Pick a preset (Lifestyle or Athletics), tweak the targets, drop in pieces, then click Generate 30-day rotation to see daily outfits.
+        <div class="capsule-intro-foot muted" style="font-size: 12px;">
+          Pick a preset, drop in pieces, then click ✨ Generate 30-day rotation. Use 👍/👎/🔒 on each day to teach the system your style.
         </div>
       </div>
     `;
@@ -7200,19 +7339,15 @@ window.addEventListener('DOMContentLoaded', () => {
         </div>
         <button class="btn btn-primary" id="cap_new">+ New capsule</button>
       </div>
-
       ${synopsisHtml()}
-
       ${capsules.length === 0 ? `
         <div class="empty">
           <div class="empty-title">No capsules yet</div>
-          <p>Set targets per category, drop in pieces, and once you have a capsule saved, click "Generate 30-day rotation" to see day-by-day outfits.</p>
+          <p>Set targets, drop in pieces, save, then generate a 30-day rotation.</p>
           <button class="btn btn-primary" id="cap_new_empty">+ Build your first capsule</button>
         </div>
       ` : `
-        <div class="capsule-list">
-          ${capsules.map(c => capsuleCardHtml(c)).join('')}
-        </div>
+        <div class="capsule-list">${capsules.map(c => capsuleCardHtml(c)).join('')}</div>
       `}
     `;
 
@@ -7267,28 +7402,16 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   function openPresetPicker() {
-    if (typeof openModal !== 'function') {
-      return openEditor(null, 'lifestyle');
-    }
+    if (typeof openModal !== 'function') return openEditor(null, 'lifestyle');
     openModal(`
       <h2 style="margin: 0 0 6px;">Pick a capsule type</h2>
-      <div class="muted" style="font-size: 12px; margin-bottom: 16px;">You can adjust targets later.</div>
       <div class="capsule-preset-grid">
-        ${Object.entries(PRESETS).map(([key, p]) => {
-          const total = Object.values(p.targets).reduce((s, n) => s + n, 0);
-          return `
-            <button class="capsule-preset-card" data-preset="${key}">
-              <div class="capsule-preset-name">${escapeHtml(p.label)}</div>
-              <div class="capsule-preset-tagline muted">${escapeHtml(p.tagline)}</div>
-              <div class="capsule-preset-counts">
-                ${Object.entries(p.targets).filter(([_, n]) => n > 0).map(([cat, n]) =>
-                  `<span class="capsule-preset-pill">${escapeHtml(categoryLabel(cat))} · ${n}</span>`
-                ).join('')}
-              </div>
-              <div class="capsule-preset-total muted">${total} pieces total</div>
-            </button>
-          `;
-        }).join('')}
+        ${Object.entries(PRESETS).map(([key, p]) => `
+          <button class="capsule-preset-card" data-preset="${key}">
+            <div class="capsule-preset-name">${escapeHtml(p.label)}</div>
+            <div class="capsule-preset-tagline muted">${escapeHtml(p.tagline)}</div>
+          </button>
+        `).join('')}
       </div>
     `);
     document.querySelectorAll('[data-preset]').forEach(btn => {
@@ -7318,9 +7441,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     if (!editingCapsule.preset) editingCapsule.preset = 'lifestyle';
 
-    // Backfill missing preset categories so legacy capsules show new
-    // sections like Pajamas. Sets target=0 if it wasn't present, so the
-    // section renders but starts empty — user can bump the target.
+    // Backfill missing preset categories so legacy capsules show new sections
     const presetTargets = PRESETS[editingCapsule.preset].targets;
     if (!editingCapsule.slots) editingCapsule.slots = {};
     for (const key of Object.keys(presetTargets)) {
@@ -7354,7 +7475,7 @@ window.addEventListener('DOMContentLoaded', () => {
       <div class="card" style="padding: 14px 16px; margin-bottom: 16px;">
         <div class="field">
           <label class="field-label" for="cap_name">Capsule name</label>
-          <input class="input" id="cap_name" type="text" placeholder="e.g. Spring 2026, Italy trip, Work core" value="${escapeHtml(editingCapsule.name || '')}" />
+          <input class="input" id="cap_name" type="text" placeholder="e.g. Spring 2026" value="${escapeHtml(editingCapsule.name || '')}" />
         </div>
         <div class="field" style="margin-top: 10px;">
           <label class="field-label">Preset</label>
@@ -7363,7 +7484,6 @@ window.addEventListener('DOMContentLoaded', () => {
               `<button type="button" data-preset-toggle="${key}" class="${presetKey === key ? 'active' : ''}">${escapeHtml(p.label)}</button>`
             ).join('')}
           </div>
-          <div class="muted" style="font-size: 11px; margin-top: 6px;">Switching preset on a new capsule resets the targets below. Editing an existing capsule won't lose your slots.</div>
         </div>
       </div>
 
@@ -7485,7 +7605,7 @@ window.addEventListener('DOMContentLoaded', () => {
               ${inSlot ? '<div class="cmp-picker-flag">✓ in capsule</div>' : ''}
             </div>
           `;
-        }).join('') || '<div class="muted" style="padding: 20px;">No eligible pieces in this category.</div>'}
+        }).join('') || '<div class="muted" style="padding: 20px;">No eligible pieces.</div>'}
       </div>
     `);
 
@@ -7516,7 +7636,7 @@ window.addEventListener('DOMContentLoaded', () => {
         card.classList.remove('picker-selected');
       } else {
         if (pickerSelectedIds.size >= MAX_PICK_PER_OPERATION) {
-          showToast(`You can add up to ${MAX_PICK_PER_OPERATION} items per round. Save and add more after.`);
+          showToast(`You can add up to ${MAX_PICK_PER_OPERATION} items per round.`);
           return;
         }
         pickerSelectedIds.add(id);
@@ -7539,9 +7659,6 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       });
       refreshCount();
-      if (cards.length > MAX_PICK_PER_OPERATION) {
-        showToast(`Selected first ${MAX_PICK_PER_OPERATION} (max per round).`);
-      }
     });
     document.getElementById('picker-clear')?.addEventListener('click', () => {
       pickerSelectedIds.clear();
@@ -7591,30 +7708,15 @@ window.addEventListener('DOMContentLoaded', () => {
         showToast('Capsule saved');
       }
       render(document.getElementById('main'));
-    } catch (e) {
-      alert('Save failed: ' + (e?.message || e));
-    }
+    } catch (e) { alert('Save failed: ' + (e?.message || e)); }
   }
 
   // ============================================================
-  // 30-day outfit rotation generator
-  // ============================================================
-  // Algorithm: pulls items out of each capsule slot, then for each day
-  // 1..30 picks a coherent outfit using round-robin indices with
-  // prime-number offsets so combinations don't repeat in lockstep.
+  // 30-day outfit rotation generator (with feedback awareness)
   // ============================================================
   function generateRotation(capsule, itemMap) {
-    const slot = (k) => (capsule.slots?.[k] || [])
-      .map(id => itemMap.get(id))
-      .filter(Boolean);
-
-    // Combine all top categories (long/short/tank + legacy)
-    const tops = [
-      ...slot('tops_long'),
-      ...slot('tops_short'),
-      ...slot('tops_tank'),
-      ...slot('tops'),  // legacy
-    ];
+    const slot = (k) => (capsule.slots?.[k] || []).map(id => itemMap.get(id)).filter(Boolean);
+    const tops = [...slot('tops_long'), ...slot('tops_short'), ...slot('tops_tank'), ...slot('tops')];
     const bottoms = slot('bottoms');
     const dresses = slot('dresses');
     const outerwear = slot('outerwear');
@@ -7622,67 +7724,82 @@ window.addEventListener('DOMContentLoaded', () => {
     const accessories = slot('accessories');
     const pajamas = slot('pajamas');
 
-    const totalAvailable = tops.length + bottoms.length + dresses.length;
+    const fb = window.outfitFeedback;
     const days = [];
 
-    for (let i = 0; i < 30; i++) {
-      const day = i + 1;
-      // Use prime offsets for variety
+    function buildOutfit(i) {
+      const outfit = { day: i + 1, items: [], pinned: false };
       const useDress = dresses.length > 0 && i % 4 === 3;
       const useOuter = outerwear.length > 0 && (i % 3 === 0 || i % 5 === 2);
       const useAcc = accessories.length > 0;
 
-      const outfit = {
-        day,
-        items: [],
-      };
-
       if (useDress) {
         outfit.items.push({ role: 'Dress', item: dresses[i % dresses.length] });
       } else {
-        if (tops.length > 0) {
-          outfit.items.push({ role: 'Top', item: tops[i % tops.length] });
+        if (tops.length > 0) outfit.items.push({ role: 'Top', item: tops[i % tops.length] });
+        if (bottoms.length > 0) outfit.items.push({ role: 'Bottom', item: bottoms[(i * 3) % bottoms.length] });
+      }
+      if (useOuter) outfit.items.push({ role: 'Layer', item: outerwear[(Math.floor(i / 3)) % outerwear.length] });
+      if (shoes.length > 0) outfit.items.push({ role: 'Shoes', item: shoes[(i * 7) % shoes.length] });
+      if (useAcc) outfit.items.push({ role: 'Accent', item: accessories[i % accessories.length] });
+      return outfit;
+    }
+
+    for (let i = 0; i < 30; i++) {
+      const dayNum = i + 1;
+
+      // Honor pinned days
+      if (fb && capsule.id != null) {
+        const pinned = fb.getPinned(capsule.id, dayNum);
+        if (pinned && Array.isArray(pinned.ids)) {
+          const pinnedItems = pinned.ids.map(id => itemMap.get(id)).filter(Boolean);
+          if (pinnedItems.length > 0) {
+            // Reconstruct roles best-effort by garmentType
+            const rolesByType = { tops: 'Top', bottoms: 'Bottom', dresses: 'Dress', outerwear: 'Layer', shoes: 'Shoes', accessories: 'Accent' };
+            days.push({
+              day: dayNum, pinned: true,
+              items: pinnedItems.map(it => ({ role: rolesByType[it.garmentType] || 'Item', item: it })),
+            });
+            continue;
+          }
         }
-        if (bottoms.length > 0) {
-          outfit.items.push({ role: 'Bottom', item: bottoms[(i * 3) % bottoms.length] });
+      }
+
+      // Build with up to 5 attempts to dodge dislikes/bad-pairs
+      let outfit = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const candidate = buildOutfit(i + attempt * 11);  // jitter the seed
+        const candidateItems = candidate.items.map(x => x.item);
+        if (fb && capsule.id != null) {
+          if (fb.isDisliked(capsule.id, candidateItems)) continue;
+          if (fb.hasBadPair(capsule.id, candidateItems, 2)) continue;
         }
+        outfit = candidate;
+        outfit.day = dayNum;
+        break;
       }
-      if (useOuter) {
-        outfit.items.push({ role: 'Layer', item: outerwear[(Math.floor(i / 3)) % outerwear.length] });
-      }
-      if (shoes.length > 0) {
-        outfit.items.push({ role: 'Shoes', item: shoes[(i * 7) % shoes.length] });
-      }
-      if (useAcc) {
-        outfit.items.push({ role: 'Accent', item: accessories[i % accessories.length] });
+      if (!outfit) outfit = buildOutfit(i);  // fallback if every attempt collided
+      outfit.day = dayNum;
+      // Mark liked outfits visually
+      if (fb && capsule.id != null) {
+        outfit.liked = fb.isLiked(capsule.id, outfit.items.map(x => x.item));
       }
       days.push(outfit);
     }
 
-    // Optional pajama rotation — if the capsule has pajamas, also build a
-    // 30-day pajama rotation (gets shown in a separate strip below the
-    // main outfits).
     let pajamaDays = [];
     if (pajamas.length > 0) {
       for (let i = 0; i < 30; i++) {
-        pajamaDays.push({
-          day: i + 1,
-          item: pajamas[i % pajamas.length],
-        });
+        pajamaDays.push({ day: i + 1, item: pajamas[i % pajamas.length] });
       }
     }
 
     return {
-      days,
-      pajamaDays,
+      days, pajamaDays,
       stats: {
-        tops: tops.length,
-        bottoms: bottoms.length,
-        dresses: dresses.length,
-        outerwear: outerwear.length,
-        shoes: shoes.length,
-        accessories: accessories.length,
-        pajamas: pajamas.length,
+        tops: tops.length, bottoms: bottoms.length, dresses: dresses.length,
+        outerwear: outerwear.length, shoes: shoes.length,
+        accessories: accessories.length, pajamas: pajamas.length,
       },
     };
   }
@@ -7692,42 +7809,45 @@ window.addEventListener('DOMContentLoaded', () => {
     const items = await dbGetAllItems();
     const itemMap = new Map(items.map(i => [i.id, i]));
     const rotation = generateRotation(capsule, itemMap);
+    _lastRotationContext = { capsule, itemMap, rotation };
 
     const minNeeded = (rotation.stats.tops + rotation.stats.dresses) > 0
                    && (rotation.stats.bottoms > 0 || rotation.stats.dresses > 0);
     if (!minNeeded) {
       openModal(`
         <h2 style="margin: 0 0 8px;">Not enough pieces yet</h2>
-        <div class="muted" style="font-size: 13px; line-height: 1.5;">
-          To generate a 30-day rotation, this capsule needs at least one
-          top + bottom (or one dress). Right now it has:
+        <div class="muted" style="font-size: 13px;">
+          Need at least one top + bottom (or one dress) to generate. You have:
+          ${rotation.stats.tops} tops, ${rotation.stats.bottoms} bottoms, ${rotation.stats.dresses} dresses.
         </div>
-        <ul style="font-size: 13px;">
-          <li>${rotation.stats.tops} top${rotation.stats.tops === 1 ? '' : 's'}</li>
-          <li>${rotation.stats.bottoms} bottom${rotation.stats.bottoms === 1 ? '' : 's'}</li>
-          <li>${rotation.stats.dresses} dress${rotation.stats.dresses === 1 ? '' : 'es'}</li>
-        </ul>
         <button class="btn btn-primary" data-close>OK</button>
       `);
       return;
     }
 
+    const fb = window.outfitFeedback;
+    const summary = (fb && capsule.id != null) ? fb.summary(capsule.id) : { liked: 0, disliked: 0, pinned: 0, badPairCount: 0 };
+
     openModal(`
       <h2 style="margin: 0 0 6px; font-family: 'Playfair Display', serif;">
         ✨ 30-Day Rotation — ${escapeHtml(capsule.name || 'Capsule')}
       </h2>
-      <div class="muted" style="font-size: 12px; margin-bottom: 14px;">
-        ${rotation.stats.tops} tops · ${rotation.stats.bottoms} bottoms · ${rotation.stats.dresses} dresses · ${rotation.stats.outerwear} layers · ${rotation.stats.shoes} shoes · ${rotation.stats.accessories} accessories${rotation.stats.pajamas ? ' · ' + rotation.stats.pajamas + ' pajama sets' : ''}
+      <div class="rotation-summary">
+        <span>${rotation.stats.tops} tops · ${rotation.stats.bottoms} bottoms · ${rotation.stats.dresses} dresses · ${rotation.stats.shoes} shoes</span>
+        <span class="rotation-train-stats">
+          👍 ${summary.liked} · 👎 ${summary.disliked} · 🔒 ${summary.pinned} · ⚠ ${summary.badPairCount} bad pair${summary.badPairCount === 1 ? '' : 's'}
+        </span>
+      </div>
+      <div class="muted" style="font-size: 11px; margin-bottom: 14px;">
+        Tap 👍 to keep an outfit, 👎 to never see it again, 🔒 to lock it to that day. The system learns from each tap.
       </div>
 
-      <div class="rotation-grid">
+      <div class="rotation-grid" id="rotation-grid">
         ${rotation.days.map(d => rotationDayHtml(d)).join('')}
       </div>
 
       ${rotation.pajamaDays.length > 0 ? `
-        <h3 style="font-family: 'Playfair Display', serif; margin: 20px 0 10px;">
-          🌙 30-Day Pajama Rotation
-        </h3>
+        <h3 style="font-family: 'Playfair Display', serif; margin: 20px 0 10px;">🌙 30-Day Pajama Rotation</h3>
         <div class="rotation-pajama-strip">
           ${rotation.pajamaDays.map(p => {
             const url = p.item.thumb ? blobToUrl(p.item.thumb) : (p.item.photo ? blobToUrl(p.item.photo) : '');
@@ -7743,14 +7863,23 @@ window.addEventListener('DOMContentLoaded', () => {
 
       <div class="row" style="gap: 8px; margin-top: 16px;">
         <button class="btn" data-close>Close</button>
+        <button class="btn btn-ghost" id="rotation-reset">Reset training</button>
         <div class="spacer" style="flex: 1;"></div>
         <button class="btn btn-primary" id="rotation-regenerate">Regenerate (shuffle)</button>
       </div>
     `);
 
+    wireRotationFeedback();
+  }
+
+  function wireRotationFeedback() {
+    const ctx = _lastRotationContext;
+    if (!ctx) return;
+    const { capsule, itemMap, rotation } = ctx;
+    const fb = window.outfitFeedback;
+    if (!fb) return;
+
     document.getElementById('rotation-regenerate')?.addEventListener('click', () => {
-      // Re-shuffle by tweaking the offset — simple approach: rotate the
-      // capsule slot arrays and regenerate.
       const shuffled = JSON.parse(JSON.stringify(capsule));
       Object.keys(shuffled.slots || {}).forEach(k => {
         const arr = shuffled.slots[k];
@@ -7759,15 +7888,156 @@ window.addEventListener('DOMContentLoaded', () => {
           shuffled.slots[k] = arr.slice(offset).concat(arr.slice(0, offset));
         }
       });
+      // preserve id so feedback still applies to the same capsule
+      shuffled.id = capsule.id;
       closeModal();
       setTimeout(() => openRotationModal(shuffled), 100);
     });
+
+    document.getElementById('rotation-reset')?.addEventListener('click', () => {
+      const choice = prompt(
+        'Reset training data?\n\n' +
+        'Type "capsule" to clear just this capsule\'s training,\n' +
+        'or "all" to clear global + this capsule.\n\n' +
+        '(Cancel to keep everything)'
+      );
+      if (!choice) return;
+      if (choice.toLowerCase() === 'all') {
+        fb.reset('all', capsule.id);
+        showToast('All training reset');
+      } else if (choice.toLowerCase() === 'capsule') {
+        fb.reset('capsule', capsule.id);
+        showToast('Capsule training reset');
+      } else {
+        return;
+      }
+      closeModal();
+      setTimeout(() => openRotationModal(capsule), 100);
+    });
+
+    document.querySelectorAll('[data-day-like]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const day = Number(btn.dataset.dayLike);
+        const dayObj = rotation.days.find(d => d.day === day);
+        if (!dayObj) return;
+        const items = dayObj.items.map(x => x.item);
+        fb.like(capsule.id, items);
+        showToast('Liked — system will favor this');
+        refreshSummary();
+        btn.classList.add('feedback-active-like');
+      });
+    });
+
+    document.querySelectorAll('[data-day-dislike]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const day = Number(btn.dataset.dayDislike);
+        const dayObj = rotation.days.find(d => d.day === day);
+        if (!dayObj) return;
+        const items = dayObj.items.map(x => x.item);
+        fb.dislike(capsule.id, items);
+        // Replace this day's outfit immediately
+        replaceDay(day);
+        showToast('Skipped — won\'t see this combination again');
+        refreshSummary();
+      });
+    });
+
+    document.querySelectorAll('[data-day-pin]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const day = Number(btn.dataset.dayPin);
+        const dayObj = rotation.days.find(d => d.day === day);
+        if (!dayObj) return;
+        const items = dayObj.items.map(x => x.item);
+        const existing = fb.getPinned(capsule.id, day);
+        if (existing) {
+          fb.unpinDay(capsule.id, day);
+          btn.textContent = '🔒';
+          btn.classList.remove('feedback-active-pin');
+          showToast(`Day ${day} unpinned`);
+        } else {
+          fb.pinDay(capsule.id, day, items);
+          btn.textContent = '🔓';
+          btn.classList.add('feedback-active-pin');
+          showToast(`Day ${day} pinned`);
+        }
+        refreshSummary();
+      });
+    });
+
+    function refreshSummary() {
+      const s = fb.summary(capsule.id);
+      const el = document.querySelector('.rotation-train-stats');
+      if (el) {
+        el.innerHTML = `👍 ${s.liked} · 👎 ${s.disliked} · 🔒 ${s.pinned} · ⚠ ${s.badPairCount} bad pair${s.badPairCount === 1 ? '' : 's'}`;
+      }
+    }
+
+    function replaceDay(dayNum) {
+      // Re-run buildOutfit attempts for that single day; mutate rotation array
+      // and re-render its card.
+      const items = (capsule.slots || {});
+      const slot = (k) => (items[k] || []).map(id => itemMap.get(id)).filter(Boolean);
+      const tops = [...slot('tops_long'), ...slot('tops_short'), ...slot('tops_tank'), ...slot('tops')];
+      const bottoms = slot('bottoms');
+      const dresses = slot('dresses');
+      const outerwear = slot('outerwear');
+      const shoes = slot('shoes');
+      const accessories = slot('accessories');
+      function build(seedI) {
+        const outfit = { day: dayNum, items: [] };
+        const useDress = dresses.length > 0 && seedI % 4 === 3;
+        const useOuter = outerwear.length > 0 && (seedI % 3 === 0 || seedI % 5 === 2);
+        const useAcc = accessories.length > 0;
+        if (useDress) {
+          outfit.items.push({ role: 'Dress', item: dresses[seedI % dresses.length] });
+        } else {
+          if (tops.length > 0) outfit.items.push({ role: 'Top', item: tops[seedI % tops.length] });
+          if (bottoms.length > 0) outfit.items.push({ role: 'Bottom', item: bottoms[(seedI * 3) % bottoms.length] });
+        }
+        if (useOuter) outfit.items.push({ role: 'Layer', item: outerwear[(Math.floor(seedI / 3)) % outerwear.length] });
+        if (shoes.length > 0) outfit.items.push({ role: 'Shoes', item: shoes[(seedI * 7) % shoes.length] });
+        if (useAcc) outfit.items.push({ role: 'Accent', item: accessories[seedI % accessories.length] });
+        return outfit;
+      }
+      const baseI = dayNum - 1;
+      let chosen = null;
+      for (let k = 1; k < 20; k++) {
+        const cand = build(baseI + k * 13);
+        const candItems = cand.items.map(x => x.item);
+        if (!fb.isDisliked(capsule.id, candItems) && !fb.hasBadPair(capsule.id, candItems, 2)) {
+          chosen = cand;
+          break;
+        }
+      }
+      if (!chosen) chosen = build(baseI);
+      const idx = rotation.days.findIndex(d => d.day === dayNum);
+      if (idx >= 0) {
+        rotation.days[idx] = chosen;
+        // Replace just this card in the DOM
+        const grid = document.getElementById('rotation-grid');
+        const cards = grid?.querySelectorAll('.rotation-day-card');
+        if (cards && cards[idx]) {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = rotationDayHtml(chosen);
+          cards[idx].replaceWith(tmp.firstElementChild);
+          // Re-wire just this card's buttons
+          wireRotationFeedback();
+        }
+      }
+    }
   }
 
-function rotationDayHtml(day) {
+  function rotationDayHtml(day) {
+    const fb = window.outfitFeedback;
+    const ctx = _lastRotationContext;
+    const isPinned = ctx && fb && fb.getPinned(ctx.capsule.id, day.day);
+    const isLiked = day.liked;
     return `
-      <div class="rotation-day-card">
-        <div class="rotation-day-num">Day ${day.day}</div>
+      <div class="rotation-day-card ${isLiked ? 'is-liked' : ''} ${isPinned ? 'is-pinned' : ''}">
+        <div class="rotation-day-num">Day ${day.day}${isPinned ? ' 🔒' : ''}${isLiked ? ' 👍' : ''}</div>
         <div class="rotation-day-items">
           ${day.items.map(({ role, item }) => {
             const url = item.thumb ? blobToUrl(item.thumb) : (item.photo ? blobToUrl(item.photo) : '');
@@ -7778,6 +8048,11 @@ function rotationDayHtml(day) {
               </div>
             `;
           }).join('')}
+        </div>
+        <div class="rotation-day-actions">
+          <button class="rotation-fb-btn" data-day-like="${day.day}" title="Like this outfit">👍</button>
+          <button class="rotation-fb-btn" data-day-dislike="${day.day}" title="Skip — never show again">👎</button>
+          <button class="rotation-fb-btn ${isPinned ? 'feedback-active-pin' : ''}" data-day-pin="${day.day}" title="${isPinned ? 'Unpin' : 'Pin to this day'}">${isPinned ? '🔓' : '🔒'}</button>
         </div>
       </div>
     `;
