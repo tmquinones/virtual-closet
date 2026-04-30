@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-04-29 19:34:09 */
+/* Virtual Closet bundle — built 2026-04-30 00:01:45 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js */
 
 
@@ -843,6 +843,7 @@ async function dbDeleteOutfit(id) {
 async function dbExportAll() {
   const items = await dbGetAllItems();
   const outfits = await dbGetAllOutfits();
+  const wishlist = await dbGetAllWishlistItems();
   const itemsExport = await Promise.all(items.map(async i => {
     const out = { ...i };
     if (out.photo) out.photo = await blobToBase64(out.photo);
@@ -852,17 +853,27 @@ async function dbExportAll() {
     }
     return out;
   }));
+  const wishlistExport = await Promise.all(wishlist.map(async w => {
+    const out = { ...w };
+    if (out.photo && typeof out.photo !== 'string') out.photo = await blobToBase64(out.photo);
+    if (out.thumb && typeof out.thumb !== 'string') out.thumb = await blobToBase64(out.thumb);
+    if (Array.isArray(out.photos)) {
+      out.photos = await Promise.all(out.photos.map(p => (p && typeof p !== 'string') ? blobToBase64(p) : p));
+    }
+    return out;
+  }));
   return {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     items: itemsExport,
-    outfits
+    outfits,
+    wishlist: wishlistExport
   };
 }
 
 async function dbImportAll(data, onProgress) {
   if (!data || !Array.isArray(data.items)) throw new Error('Invalid backup: missing "items" array');
-  const total = data.items.length + (Array.isArray(data.outfits) ? data.outfits.length : 0);
+  const total = data.items.length + (Array.isArray(data.outfits) ? data.outfits.length : 0) + (Array.isArray(data.wishlist) ? data.wishlist.length : 0);
   const newItemIds = [];
   let done = 0;
   for (const it of data.items) {
@@ -891,6 +902,26 @@ async function dbImportAll(data, onProgress) {
       await dbAddOutfit(rest);
       done++;
       if (onProgress) onProgress(done, total, rest.name);
+    }
+  }
+  if (Array.isArray(data.wishlist)) {
+    for (const w of data.wishlist) {
+      const { id, ...rest } = w;
+      try {
+        if (rest.photo && typeof rest.photo === 'string') rest.photo = await base64ToBlob(rest.photo);
+        if (rest.thumb && typeof rest.thumb === 'string') rest.thumb = await base64ToBlob(rest.thumb);
+        if (Array.isArray(rest.photos)) {
+          rest.photos = await Promise.all(rest.photos.map(p =>
+            (p && typeof p === 'string') ? base64ToBlob(p) : null
+          ));
+          rest.photos = rest.photos.filter(Boolean);
+        }
+        await dbAddWishlistItem(rest);
+      } catch (err) {
+        console.error('Failed to import wishlist item', rest.name || '(unnamed)', err);
+      }
+      done++;
+      if (onProgress) onProgress(done, (total || done), 'Wishlist: ' + (rest.name || ''));
     }
   }
   return newItemIds;
