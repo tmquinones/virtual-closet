@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-04-30 01:03:52 */
-/* Sources: 34 files */
+/* Virtual Closet bundle — built 2026-04-30 23:00:36 */
+/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -229,6 +229,7 @@ function labelForOccasion(id) { return OCCASIONS.find(o => o.id === id)?.label |
 // and from the outfit suggester pool. They remain visible in Insights →
 // Declutter and are still editable from the closet detail modal.
 // ============================================================
+
 function isActiveItem(item) {
   if (!item) return false;
   return item.status !== 'returned';
@@ -7010,38 +7011,127 @@ window.addEventListener('DOMContentLoaded', () => {
 // slot. Multiple named capsules persist in IndexedDB.
 //
 // Two presets ship out of the box:
-//   - lifestyle: standard everyday capsule (tops, bottoms, dresses, ...)
+//   - lifestyle: standard everyday capsule
 //   - athletics: sport-flavored capsule with different default counts
 // User can override targets in the editor regardless of preset.
+//
+// 2026-04-29 refinements:
+//   * Tops split into long sleeve / short sleeve / tank top
+//   * Outerwear picker pulls from outerwear + layering subtypes in tops
+//     (sweater, cardigan, hoodie, blazer) so layering pieces aren't
+//     orphaned just because they're tagged as Tops
+//   * Intimates & Swim picker shows the entire closet
+//   * Item picker supports multi-select up to 30 at a time
 
 (function() {
+  // Each category has a target count, a label, and an item-filter function.
+  // Filter receives the active items array and returns those eligible for
+  // that section.
+  const SHORT_SLEEVE_SUBTYPES = new Set(['T-shirt', 'Blouse', 'Shirt', 'Polo']);
+  const LAYERING_SUBTYPES_IN_TOPS = new Set(['Sweater', 'Cardigan', 'Hoodie', 'Blazer', 'Jacket', 'Coat', 'Parka', 'Vest']);
+
+  const CATEGORY_DEFS = {
+    tops_long: {
+      label: 'Tops — Long sleeve',
+      filter: it => it.garmentType === 'tops' && it.subtype === 'Long sleeve',
+    },
+    tops_short: {
+      label: 'Tops — Short sleeve',
+      filter: it => it.garmentType === 'tops' && SHORT_SLEEVE_SUBTYPES.has(it.subtype),
+    },
+    tops_tank: {
+      label: 'Tops — Tank top',
+      filter: it => it.garmentType === 'tops' && it.subtype === 'Tank top',
+    },
+    bottoms: {
+      label: 'Bottoms',
+      filter: it => it.garmentType === 'bottoms',
+    },
+    dresses: {
+      label: 'Dresses',
+      filter: it => it.garmentType === 'dresses',
+    },
+    outerwear: {
+      // Outerwear pulls from outerwear category PLUS layering pieces
+      // tagged as tops (sweater/cardigan/hoodie/blazer)
+      label: 'Outerwear & Layers',
+      filter: it => it.garmentType === 'outerwear'
+                 || (it.garmentType === 'tops' && LAYERING_SUBTYPES_IN_TOPS.has(it.subtype)),
+    },
+    intimates_swim: {
+      // Anything in the closet — bras might be tagged as tops, swim might
+      // be its own category, etc. Let user pick freely.
+      label: 'Intimates & Swim',
+      filter: () => true,
+    },
+    shoes: {
+      label: 'Shoes',
+      filter: it => it.garmentType === 'shoes',
+    },
+    accessories: {
+      label: 'Accessories',
+      filter: it => it.garmentType === 'accessories',
+    },
+    // Backward-compat: legacy capsules saved before the tops split used
+    // a single 'tops' key. Render those rows using the broad filter so
+    // existing data still displays.
+    tops: {
+      label: 'Tops (legacy)',
+      filter: it => it.garmentType === 'tops',
+    },
+  };
+
   const PRESETS = {
     lifestyle: {
       label: 'Lifestyle',
       tagline: 'Everyday mix-and-match wardrobe',
       targets: {
-        tops: 5, bottoms: 3, dresses: 1, outerwear: 1,
-        intimates_swim: 0, shoes: 2, accessories: 3
-      }
+        tops_long: 2,
+        tops_short: 2,
+        tops_tank: 1,
+        bottoms: 3,
+        dresses: 1,
+        outerwear: 1,
+        intimates_swim: 0,
+        shoes: 2,
+        accessories: 3,
+      },
     },
     athletics: {
       label: 'Athletics',
       tagline: 'Sport-focused — sweat, lift, run, court',
       targets: {
-        tops: 6,
+        tops_long: 1,
+        tops_short: 3,
+        tops_tank: 2,
         bottoms: 4,
         dresses: 0,
         outerwear: 2,
         intimates_swim: 0,
         shoes: 2,
-        accessories: 2
-      }
-    }
+        accessories: 2,
+      },
+    },
   };
 
   const DEFAULT_TARGETS = PRESETS.lifestyle.targets;
   let editingId = null;
   let editingCapsule = null;
+  // Multi-select state for the item picker
+  const MAX_PICK_PER_OPERATION = 30;
+  let pickerSelectedIds = new Set();
+  let pickerCat = null;
+  let pickerCachedItems = null;
+
+  function categoryLabel(cat) {
+    return CATEGORY_DEFS[cat]?.label || cat;
+  }
+
+  function filterForCategory(cat, items) {
+    const def = CATEGORY_DEFS[cat];
+    if (!def) return items;
+    return items.filter(def.filter);
+  }
 
   function synopsisHtml() {
     return `
@@ -7145,7 +7235,7 @@ window.addEventListener('DOMContentLoaded', () => {
         <div class="capsule-cat-mini">
           ${Object.entries(c.targets || {}).map(([cat, target]) => {
             const filled = (c.slots?.[cat] || []).length;
-            return `<span class="capsule-cat-pill ${filled >= target ? 'done' : ''}">${escapeHtml(labelForGarmentType(cat) || cat)} ${filled}/${target}</span>`;
+            return `<span class="capsule-cat-pill ${filled >= target ? 'done' : ''}">${escapeHtml(categoryLabel(cat))} ${filled}/${target}</span>`;
           }).join('')}
         </div>
         <div class="row" style="gap: 8px; margin-top: 12px;">
@@ -7172,7 +7262,7 @@ window.addEventListener('DOMContentLoaded', () => {
               <div class="capsule-preset-tagline muted">${escapeHtml(p.tagline)}</div>
               <div class="capsule-preset-counts">
                 ${Object.entries(p.targets).filter(([_, n]) => n > 0).map(([cat, n]) =>
-                  `<span class="capsule-preset-pill">${escapeHtml(labelForGarmentType(cat) || cat)} · ${n}</span>`
+                  `<span class="capsule-preset-pill">${escapeHtml(categoryLabel(cat))} · ${n}</span>`
                 ).join('')}
               </div>
               <div class="capsule-preset-total muted">${total} pieces total</div>
@@ -7251,10 +7341,10 @@ window.addEventListener('DOMContentLoaded', () => {
         return `
           <section class="capsule-section" data-cat="${cat}">
             <div class="capsule-section-head">
-              <h2 class="capsule-section-title">${escapeHtml(labelForGarmentType(cat) || cat)}</h2>
+              <h2 class="capsule-section-title">${escapeHtml(categoryLabel(cat))}</h2>
               <div class="capsule-section-target">
                 <label class="muted" style="font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;">Target</label>
-                <input class="input" type="number" min="0" max="20" value="${target}" data-target="${cat}" style="width: 64px;" />
+                <input class="input" type="number" min="0" max="50" value="${target}" data-target="${cat}" style="width: 64px;" />
                 <span class="capsule-fill-count">${slotItems.length} / ${target}</span>
               </div>
             </div>
@@ -7318,43 +7408,158 @@ window.addEventListener('DOMContentLoaded', () => {
     `;
   }
 
+  // ===== Multi-select item picker =====
   async function openItemPicker(cat) {
     if (typeof openModal !== 'function') return;
-    const items = await dbGetAllItems();
-    const active = (typeof activeItems === 'function') ? activeItems(items) : items;
-    const inCat = active.filter(i => i.garmentType === cat);
+    pickerCat = cat;
+    pickerSelectedIds = new Set();
+
+    const all = await dbGetAllItems();
+    const active = (typeof activeItems === 'function') ? activeItems(all) : all;
+    const eligible = filterForCategory(cat, active);
+    pickerCachedItems = eligible;
+
+    renderPickerModal();
+  }
+
+  function renderPickerModal() {
+    const cat = pickerCat;
+    const eligible = pickerCachedItems || [];
     const alreadySelected = new Set(editingCapsule.slots[cat] || []);
 
     openModal(`
-      <h2 style="margin: 0 0 8px;">Add ${escapeHtml(labelForGarmentType(cat))}</h2>
-      <div class="muted" style="font-size: 12px; margin-bottom: 14px;">${inCat.length} pieces in this category. Click to add to the capsule.</div>
+      <h2 style="margin: 0 0 4px;">Add ${escapeHtml(categoryLabel(cat))}</h2>
+      <div class="muted" style="font-size: 12px; margin-bottom: 12px;">
+        ${eligible.length} eligible piece${eligible.length === 1 ? '' : 's'} ·
+        click cards to select up to ${MAX_PICK_PER_OPERATION} at a time
+      </div>
+      <div class="cmp-picker-toolbar" style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius);">
+        <span id="picker-count" style="font-size: 13px; font-weight: 500;">
+          0 selected
+        </span>
+        <span class="muted" style="font-size: 11px;">/ max ${MAX_PICK_PER_OPERATION}</span>
+        <div class="spacer" style="flex: 1;"></div>
+        <button class="btn btn-ghost btn-sm" id="picker-select-visible">Select all</button>
+        <button class="btn btn-ghost btn-sm" id="picker-clear">Clear</button>
+        <button class="btn btn-primary" id="picker-done" disabled>Add 0 →</button>
+      </div>
       <div class="cmp-picker-grid">
-        ${inCat.map(i => {
+        ${eligible.map(i => {
           const url = i.thumb ? blobToUrl(i.thumb) : (i.photo ? blobToUrl(i.photo) : '');
           const inSlot = alreadySelected.has(i.id);
           return `
             <div class="cmp-picker-card ${inSlot ? 'cmp-already' : ''}" data-pick-cat-id="${i.id}">
+              <div class="picker-checkbox"></div>
               <div class="cmp-picker-thumb" style="background-image:url('${url}')"></div>
               <div class="cmp-picker-name">${escapeHtml(i.name || i.subtype || '—')}</div>
               <div class="cmp-picker-brand muted">${escapeHtml([i.brand, i.color].filter(Boolean).join(' · '))}</div>
               ${inSlot ? '<div class="cmp-picker-flag">✓ in capsule</div>' : ''}
             </div>
           `;
-        }).join('') || '<div class="muted" style="padding: 20px;">No items in this category.</div>'}
+        }).join('') || '<div class="muted" style="padding: 20px;">No eligible pieces in this category.</div>'}
       </div>
     `);
+
+    function refreshCount() {
+      const n = pickerSelectedIds.size;
+      const countEl = document.getElementById('picker-count');
+      const doneEl = document.getElementById('picker-done');
+      if (countEl) countEl.textContent = `${n} selected`;
+      if (doneEl) {
+        doneEl.textContent = `Add ${n} →`;
+        doneEl.disabled = n === 0;
+      }
+    }
+
+    function toggleCard(card, id) {
+      // Don't toggle items already in the capsule (they show as ✓ in capsule)
+      if (card.classList.contains('cmp-already')) {
+        // Allow removing them by clicking — sets a "remove" state
+        if (pickerSelectedIds.has(id)) {
+          pickerSelectedIds.delete(id);
+          card.classList.remove('picker-selected-remove');
+        } else {
+          pickerSelectedIds.add(id);
+          card.classList.add('picker-selected-remove');
+        }
+        refreshCount();
+        return;
+      }
+      if (pickerSelectedIds.has(id)) {
+        pickerSelectedIds.delete(id);
+        card.classList.remove('picker-selected');
+      } else {
+        if (pickerSelectedIds.size >= MAX_PICK_PER_OPERATION) {
+          showToast(`You can add up to ${MAX_PICK_PER_OPERATION} items per round. Save and add more after.`);
+          return;
+        }
+        pickerSelectedIds.add(id);
+        card.classList.add('picker-selected');
+      }
+      refreshCount();
+    }
+
     document.querySelectorAll('[data-pick-cat-id]').forEach(card => {
       card.addEventListener('click', () => {
         const id = Number(card.dataset.pickCatId);
-        if (!editingCapsule.slots[cat]) editingCapsule.slots[cat] = [];
-        if (alreadySelected.has(id)) {
-          editingCapsule.slots[cat] = editingCapsule.slots[cat].filter(x => x !== id);
-        } else {
-          editingCapsule.slots[cat].push(id);
-        }
-        closeModal();
-        renderEditor();
+        toggleCard(card, id);
       });
+    });
+
+    document.getElementById('picker-select-visible')?.addEventListener('click', () => {
+      const cards = document.querySelectorAll('[data-pick-cat-id]:not(.cmp-already)');
+      let added = 0;
+      cards.forEach(card => {
+        if (pickerSelectedIds.size >= MAX_PICK_PER_OPERATION) return;
+        const id = Number(card.dataset.pickCatId);
+        if (!pickerSelectedIds.has(id)) {
+          pickerSelectedIds.add(id);
+          card.classList.add('picker-selected');
+          added++;
+        }
+      });
+      refreshCount();
+      if (cards.length > MAX_PICK_PER_OPERATION) {
+        showToast(`Selected first ${MAX_PICK_PER_OPERATION} (max per round).`);
+      }
+    });
+
+    document.getElementById('picker-clear')?.addEventListener('click', () => {
+      pickerSelectedIds.clear();
+      document.querySelectorAll('[data-pick-cat-id]').forEach(c => {
+        c.classList.remove('picker-selected', 'picker-selected-remove');
+      });
+      refreshCount();
+    });
+
+    document.getElementById('picker-done')?.addEventListener('click', () => {
+      if (!editingCapsule.slots[cat]) editingCapsule.slots[cat] = [];
+      const slot = editingCapsule.slots[cat];
+      // For items already in capsule that are now flagged for removal, remove them.
+      // For items not in capsule that are flagged for adding, add them.
+      const alreadyInSlot = new Set(slot);
+      const toRemove = [];
+      const toAdd = [];
+      pickerSelectedIds.forEach(id => {
+        if (alreadyInSlot.has(id)) toRemove.push(id);
+        else toAdd.push(id);
+      });
+      const newSlot = slot
+        .filter(id => !toRemove.includes(id))
+        .concat(toAdd);
+      editingCapsule.slots[cat] = newSlot;
+      pickerSelectedIds.clear();
+      pickerCachedItems = null;
+      pickerCat = null;
+      closeModal();
+      renderEditor();
+      const n = toAdd.length + toRemove.length;
+      if (n > 0) {
+        const parts = [];
+        if (toAdd.length) parts.push(`added ${toAdd.length}`);
+        if (toRemove.length) parts.push(`removed ${toRemove.length}`);
+        showToast(parts.join(' · '));
+      }
     });
   }
 

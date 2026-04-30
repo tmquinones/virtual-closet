@@ -2286,4 +2286,218 @@ body.theme-dark .slide-tiny-thumb {
   grid-template-columns: 1fr;
   gap: 12px;
 }
-.shop-ma
+.shop-manage-card {
+  display: grid;
+  grid-template-columns: 96px 1fr auto;
+  gap: 16px;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+@media (max-width: 700px) {
+  .shop-manage-card { grid-template-columns: 72px 1fr; }
+  .shop-manage-card .shop-actions { grid-column: 1 / -1; }
+}
+.shop-thumb {
+  width: 96px; height: 96px;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--surface-2);
+  border-radius: var(--radius);
+}
+.shop-name {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.shop-meta { font-size: 12px; margin-bottom: 6px; }
+.shop-price {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+  font-family: 'Playfair Display', Georgia, serif;
+}
+.shop-desc {
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+.shop-offer-count {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--danger);
+  margin-top: 6px;
+  font-weight: 600;
+}
+.shop-actions {
+  display: flex;
+  gap: 6px;
+  flex-direction: column;
+}
+
+/* Buyer-side preview storefront */
+.shop-preview-storefront {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+.shop-storefront-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+}
+.shop-storefront-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 26px;
+  font-weight: 600;
+  margin: 0;
+}
+.shop-storefront-badge {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: var(--text);
+  color: var(--bg);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.shop-buyer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.shop-buyer-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.shop-buyer-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--text);
+}
+.shop-buyer-thumb {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--surface-2);
+}
+.shop-buyer-info { padding: 10px 12px 12px; }
+.shop-buyer-brand {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.shop-buyer-name {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 2px;
+}
+.shop-buyer-meta { font-size: 11px; margin-bottom: 6px; }
+.shop-buyer-price {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 8px;
+  font-family: 'Playfair Display', Georgia, serif;
+}
+.shop-buyer-offer { width: 100%; }
+
+/* Buyer detail modal */
+.shop-detail {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+@media (max-width: 700px) {
+  .shop-detail { grid-template-columns: 1fr; }
+}
+.shop-detail-photos {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.shop-detail-photo {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--surface-2);
+  border-radius: var(--radius);
+}
+.shop-detail-price {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==================================================================
+   Capsule item picker — multi-select states (added Phase 27)
+   ================================================================== */
+.picker-checkbox {
+  position: absolute;
+  top: 6px; left: 6px;
+  width: 20px; height: 20px;
+  border: 2px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  z-index: 2;
+  transition: all 0.15s ease;
+}
+.cmp-picker-card { position: relative; }
+.cmp-picker-card.picker-selected {
+  border-color: var(--text);
+  background: var(--surface-2);
+}
+.cmp-picker-card.picker-selected .picker-checkbox {
+  background: var(--text);
+  border-color: var(--text);
+}
+.cmp-picker-card.picker-selected .picker-checkbox::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bg);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
+}
+.cmp-picker-card.picker-selected-remove {
+  border-color: var(--danger);
+  background: var(--surface);
+}
+.cmp-picker-card.picker-selected-remove .picker-checkbox {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.cmp-picker-card.picker-selected-remove .picker-checkbox::after {
+  content: '×';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+}
