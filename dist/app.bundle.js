@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-04-30 00:15:10 */
+/* Virtual Closet bundle — built 2026-04-30 00:20:09 */
 /* Sources: 33 files */
 
 
@@ -5818,15 +5818,23 @@ window.addEventListener('DOMContentLoaded', () => {
     // Returned items aren't owned anymore — exclude them from similarity matches.
     const closetItems = (typeof activeItems === 'function') ? activeItems(closetAll) : closetAll;
     const wishItems = await dbGetAllWishlistItems();
+    // When the wishlist item has a subtype, require the candidate to share
+    // it. Prevents 'accessories' alone from clumping sunglasses with
+    // wristlets, sleeves, etc.
+    const wishSub = (wishItem.subtype || '').trim().toLowerCase();
+    const passesSubtype = (cand) => {
+      if (!wishSub) return true;
+      return (cand.subtype || '').trim().toLowerCase() === wishSub;
+    };
     const closet = closetItems
       .map(i => ({ item: i, score: _similarityScore(wishItem, i) }))
-      .filter(x => x.score >= 5)  // must at least match garmentType
+      .filter(x => x.score >= 5 && passesSubtype(x.item))
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
     const otherWish = wishItems
       .filter(w => w.id !== wishItem.id)
       .map(w => ({ item: w, score: _similarityScore(wishItem, w) }))
-      .filter(x => x.score >= 5)
+      .filter(x => x.score >= 5 && passesSubtype(x.item))
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
     return { closet, wishlist: otherWish };
