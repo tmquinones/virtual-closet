@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-04-30 00:08:49 */
+/* Virtual Closet bundle — built 2026-04-30 00:15:10 */
 /* Sources: 33 files */
 
 
@@ -8165,6 +8165,7 @@ window.addEventListener('DOMContentLoaded', () => {
   function daysUntilReturnDeadline(item) {
     if (!item || !item.purchaseDate) return null;
     if (item.status === 'returned' || item.status === 'sold') return null;
+    if (item.returnDecided) return null;
     const win = Number(item.returnWindowDays);
     const days = Number.isFinite(win) && win > 0 ? win : DEFAULT_RETURN_DAYS;
     const purchase = new Date(item.purchaseDate + 'T00:00');
@@ -8317,8 +8318,18 @@ window.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
         const id = Number(b.dataset.rdMark);
         const status = b.dataset.rdStatus;
-        await dbUpdateItem(id, { status });
-        showToast('Status updated');
+        await dbUpdateItem(id, { status, returnDecided: true });
+        showToast('Marked as returned');
+        render(main);
+        refreshSidebarBadge();
+      });
+    });
+    main.querySelectorAll('[data-rd-keep]').forEach(b => {
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = Number(b.dataset.rdKeep);
+        await dbUpdateItem(id, { returnDecided: true });
+        showToast('Kept — removed from Returns Due');
         render(main);
         refreshSidebarBadge();
       });
@@ -8339,7 +8350,8 @@ window.addEventListener('DOMContentLoaded', () => {
           <div class="rd-deadline">${escapeHtml(left)} · deadline ${escapeHtml(fmtDeadline(it))}</div>
         </div>
         <div class="rd-actions">
-          <button class="btn btn-sm" data-rd-mark="${it.id}" data-rd-status="returned">Mark returned</button>
+          <button class="btn btn-sm btn-primary" data-rd-mark="${it.id}" data-rd-status="returned">Returned</button>
+          <button class="btn btn-sm" data-rd-keep="${it.id}">Kept</button>
         </div>
       </div>
     `;
