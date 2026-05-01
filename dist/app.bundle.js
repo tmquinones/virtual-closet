@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-01 01:32:04 */
+/* Virtual Closet bundle — built 2026-05-01 01:37:18 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -6792,15 +6792,18 @@ window.addEventListener('DOMContentLoaded', () => {
 /* ===== js/compare-r1.js ===== */
 // compare-r1.js — Side-by-side item comparison at #/compare
 // Pulls items from BOTH closet and wishlist via a unified picker.
-// Up to 8 columns. Rows: photo, name, brand, color, size, price, etc.
+// Up to 8 columns. Picker supports multi-select; returned items filtered out.
 
 (function() {
-  // Selected for compare: array of { source: 'closet' | 'wishlist', id }
   let picked = [];
   const MAX_COLS = 8;
+  // Multi-select state for the picker modal
+  let pickerSel = new Set();  // keys: "closet:123" / "wishlist:45"
 
   async function loadAllSources() {
-    const closet = await dbGetAllItems();
+    const closetAll = await dbGetAllItems();
+    // Filter out returned items — they shouldn't show as compare options
+    const closet = (typeof activeItems === 'function') ? activeItems(closetAll) : closetAll;
     const wish = (typeof dbGetAllWishlistItems === 'function') ? await dbGetAllWishlistItems() : [];
     return { closet, wish };
   }
@@ -6829,8 +6832,6 @@ window.addEventListener('DOMContentLoaded', () => {
     return s;
   }
 
-  // Compare row helper: render a row across all columns, optionally highlight
-  // when values differ. `valueOf` returns the row value for an item.
   function compareRow(label, items, valueOf, opts = {}) {
     const values = items.map(({ item, source }) => valueOf(item, source));
     const allSame = values.every(v => String(v || '').toLowerCase() === String(values[0] || '').toLowerCase());
@@ -6855,14 +6856,14 @@ window.addEventListener('DOMContentLoaded', () => {
       </div>
 
       <div class="row" style="justify-content: center; gap: 8px; margin-bottom: 18px;">
-        <button class="btn btn-primary" id="cmp_add" ${resolved.length >= MAX_COLS ? 'disabled' : ''}>+ Add item to compare</button>
+        <button class="btn btn-primary" id="cmp_add" ${resolved.length >= MAX_COLS ? 'disabled' : ''}>+ Add items to compare</button>
         ${resolved.length > 0 ? '<button class="btn" id="cmp_clear">Clear all</button>' : ''}
       </div>
 
       ${resolved.length === 0 ? `
         <div class="empty">
           <div class="empty-title">No items selected yet</div>
-          <p>Click "+ Add item" to pick pieces from your closet or wishlist. You can compare up to ${MAX_COLS} at once.</p>
+          <p>Click "+ Add items" and tick up to ${MAX_COLS} pieces from your closet or wishlist.</p>
         </div>
       ` : renderTable(resolved)}
     `;
@@ -6922,18 +6923,34 @@ window.addEventListener('DOMContentLoaded', () => {
     `;
   }
 
-  // ===== Picker =====
+  // ===== Multi-select picker =====
   async function openPicker() {
     if (typeof openModal !== 'function') return;
     const { closet, wish } = await loadAllSources();
 
-    const closetHtml = closet.map(i => itemPickerCard(i, 'closet')).join('');
-    const wishHtml = wish.map(i => itemPickerCard(i, 'wishlist')).join('');
+    pickerSel = new Set();
+    const remaining = MAX_COLS - picked.length;
+
+    // Already-picked keys so we can grey them out instead of letting them be added twice
+    const already = new Set(picked.map(p => `${p.source}:${p.id}`));
+
+    const closetHtml = closet.map(i => itemPickerCard(i, 'closet', already)).join('');
+    const wishHtml = wish.map(i => itemPickerCard(i, 'wishlist', already)).join('');
 
     openModal(`
-      <h2 style="margin: 0 0 14px;">Pick items to compare</h2>
+      <h2 style="margin: 0 0 8px;">Pick items to compare</h2>
+      <div class="muted" style="font-size: 12px; margin-bottom: 12px;">
+        ${remaining} slot${remaining === 1 ? '' : 's'} left · click cards to select
+      </div>
       <div class="row" style="margin-bottom: 12px;">
         <input class="input" id="cmp_search" placeholder="Search by name or brand…" style="flex: 1;" />
+      </div>
+      <div class="cmp-picker-toolbar" style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius);">
+        <span id="cmp-picker-count" style="font-size: 13px; font-weight: 500;">0 selected</span>
+        <span class="muted" style="font-size: 11px;">/ ${remaining} slots open</span>
+        <div class="spacer" style="flex: 1;"></div>
+        <button class="btn btn-ghost btn-sm" id="cmp-picker-clear">Clear</button>
+        <button class="btn btn-primary" id="cmp-picker-done" disabled>Add 0 →</button>
       </div>
       <div class="cmp-picker-tabs">
         <button class="login-tab active" data-pickerTab="closet">Closet (${closet.length})</button>
@@ -6942,6 +6959,17 @@ window.addEventListener('DOMContentLoaded', () => {
       <div class="cmp-picker-grid" id="cmp_picker_closet">${closetHtml || '<div class="muted" style="padding: 20px;">Closet is empty.</div>'}</div>
       <div class="cmp-picker-grid" id="cmp_picker_wishlist" hidden>${wishHtml || '<div class="muted" style="padding: 20px;">Wishlist is empty.</div>'}</div>
     `);
+
+    function refreshCount() {
+      const n = pickerSel.size;
+      const countEl = document.getElementById('cmp-picker-count');
+      const doneEl = document.getElementById('cmp-picker-done');
+      if (countEl) countEl.textContent = `${n} selected`;
+      if (doneEl) {
+        doneEl.textContent = `Add ${n} →`;
+        doneEl.disabled = n === 0;
+      }
+    }
 
     document.querySelectorAll('[data-pickerTab]').forEach(b => {
       b.addEventListener('click', () => {
@@ -6962,34 +6990,60 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     document.querySelectorAll('.cmp-picker-card').forEach(card => {
+      // Already-picked cards are visually marked but not clickable
+      if (card.classList.contains('cmp-already')) return;
       card.addEventListener('click', () => {
-        if (picked.length >= MAX_COLS) {
-          alert('You can compare up to ' + MAX_COLS + ' items at once.');
-          return;
-        }
         const source = card.dataset.source;
         const id = Number(card.dataset.id);
-        // Avoid duplicates of same item
-        if (picked.some(p => p.source === source && p.id === id)) {
-          alert('That item is already in the comparison.');
-          return;
+        const key = `${source}:${id}`;
+        if (pickerSel.has(key)) {
+          pickerSel.delete(key);
+          card.classList.remove('picker-selected');
+        } else {
+          if (pickerSel.size >= remaining) {
+            showToast(`Only ${remaining} slot${remaining === 1 ? '' : 's'} left.`);
+            return;
+          }
+          pickerSel.add(key);
+          card.classList.add('picker-selected');
         }
-        picked.push({ source, id });
-        closeModal();
-        render(document.getElementById('main'));
+        refreshCount();
       });
+    });
+
+    document.getElementById('cmp-picker-clear').addEventListener('click', () => {
+      pickerSel.clear();
+      document.querySelectorAll('.cmp-picker-card.picker-selected').forEach(c => c.classList.remove('picker-selected'));
+      refreshCount();
+    });
+
+    document.getElementById('cmp-picker-done').addEventListener('click', () => {
+      pickerSel.forEach(key => {
+        const [source, idStr] = key.split(':');
+        const id = Number(idStr);
+        if (!picked.some(p => p.source === source && p.id === id)) {
+          picked.push({ source, id });
+        }
+      });
+      pickerSel.clear();
+      closeModal();
+      render(document.getElementById('main'));
     });
   }
 
-  function itemPickerCard(item, source) {
+  function itemPickerCard(item, source, already) {
     const url = item.thumb ? blobToUrl(item.thumb) : (item.photo ? blobToUrl(item.photo) : '');
     const name = item.name || item.subtype || '—';
     const brand = item.brand || '';
+    const key = `${source}:${item.id}`;
+    const isAlready = already && already.has(key);
     return `
-      <div class="cmp-picker-card" data-source="${source}" data-id="${item.id}">
+      <div class="cmp-picker-card ${isAlready ? 'cmp-already' : ''}" data-source="${source}" data-id="${item.id}">
+        <div class="picker-checkbox"></div>
         <div class="cmp-picker-thumb" style="background-image:url('${url}')"></div>
         <div class="cmp-picker-name">${escapeHtml(name)}</div>
         <div class="cmp-picker-brand muted">${escapeHtml(brand)}</div>
+        ${isAlready ? '<div class="cmp-picker-flag">✓ already in compare</div>' : ''}
       </div>
     `;
   }
