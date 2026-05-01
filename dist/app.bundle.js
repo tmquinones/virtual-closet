@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-01 20:05:33 */
+/* Virtual Closet bundle — built 2026-05-01 20:09:01 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -8820,38 +8820,47 @@ function rotationDayHtml(day) {
 
 /* ===== js/slideshow-r1.js ===== */
 // slideshow-r1.js — Monthly wear log slideshow at #/slideshow
-// Combines daily-outfit photos and item wearLog dates into a month-by-month
-// gallery. Tap a day to see which closet pieces were worn.
 
 (function() {
-  // Coerce any date-ish value (string / Date / null) to a YYYY-MM-DD string.
+  // Coerce any date-ish value to YYYY-MM-DD or empty.
   function toIsoDate(d) {
     if (!d) return '';
-    if (typeof d === 'string') return d;
     if (d instanceof Date) {
       if (isNaN(d)) return '';
       return d.toISOString().slice(0, 10);
     }
-    return String(d || '');
+    if (typeof d === 'string') {
+      if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+      const parsed = new Date(d);
+      if (!isNaN(parsed)) return parsed.toISOString().slice(0, 10);
+      return '';
+    }
+    if (typeof d === 'number') {
+      const dt = new Date(d);
+      if (!isNaN(dt)) return dt.toISOString().slice(0, 10);
+    }
+    return '';
   }
   function ymKey(iso) {
     const s = toIsoDate(iso);
     if (!s || s.length < 7) return '';
-    return s.slice(0, 7); // YYYY-MM
+    return s.slice(0, 7);
   }
   function monthLabel(ym) {
-    if (!ym || ym.length !== 7) return ym;
+    if (!ym || ym.length !== 7) return ym || 'Undated';
     const [y, m] = ym.split('-');
-    const d = new Date(Number(y), Number(m) - 1, 1);
+    const yi = Number(y), mi = Number(m);
+    if (!Number.isFinite(yi) || !Number.isFinite(mi)) return 'Undated';
+    const d = new Date(yi, mi - 1, 1);
+    if (isNaN(d)) return 'Undated';
     return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   }
   function fmtDay(iso) {
     const s = toIsoDate(iso);
     if (!s) return '';
-    try {
-      const d = new Date(s + 'T00:00');
-      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    } catch (_) { return s; }
+    const d = new Date(s + 'T00:00');
+    if (isNaN(d)) return s;
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   }
 
   async function render(main) {
@@ -8864,8 +8873,6 @@ function rotationDayHtml(day) {
     ]);
     const itemMap = new Map(itemsAll.map(i => [i.id, i]));
 
-    // Build a per-day map: { date -> { photo, caption, itemIds: Set } }
-    // All keys are normalized to YYYY-MM-DD strings so downstream code is safe.
     const days = new Map();
     for (const d of dailyAll) {
       const key = toIsoDate(d.date);
@@ -8876,8 +8883,6 @@ function rotationDayHtml(day) {
       (d.itemIds || []).forEach(id => entry.itemIds.add(id));
       days.set(key, entry);
     }
-    // Layer in wearLog dates from items so historical entries appear too,
-    // even on days where there's no uploaded photo yet.
     for (const it of itemsAll) {
       for (const rawDate of (it.wearLog || [])) {
         const key = toIsoDate(rawDate);
@@ -8889,14 +8894,13 @@ function rotationDayHtml(day) {
     }
     const dayList = [...days.values()].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
-    // Group by month
     const months = new Map();
     for (const d of dayList) {
       const k = ymKey(d.date);
       if (!months.has(k)) months.set(k, []);
       months.get(k).push(d);
     }
-    const monthList = [...months.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+    const monthList = [...months.entries()].sort((a, b) => String(b[0] || '').localeCompare(String(a[0] || '')));
 
     main.innerHTML = `
       <div class="page-header">
@@ -8910,7 +8914,7 @@ function rotationDayHtml(day) {
       ${monthList.length === 0 ? `
         <div class="empty">
           <div class="empty-title">No wear history yet</div>
-          <p>Log a day on the Daily tab — or wear a piece and mark it on its detail page — to start building your slideshow.</p>
+          <p>Log a day on the Daily tab to start building your slideshow.</p>
           <a class="btn btn-primary" href="#/daily">+ Log today</a>
         </div>
       ` : monthList.map(([ym, list]) => `
@@ -8923,7 +8927,6 @@ function rotationDayHtml(day) {
       `).join('')}
     `;
 
-    // Wire tap-for-detail
     main.querySelectorAll('[data-slide-day]').forEach(card => {
       card.addEventListener('click', () => {
         const date = card.dataset.slideDay;
@@ -8941,13 +8944,14 @@ function rotationDayHtml(day) {
       const u = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
       return `<div class="slide-tiny-thumb" style="background-image:url('${u}')"></div>`;
     }).join('');
+    const dateLabel = fmtDay(day.date) || 'Undated';
     return `
       <div class="slide-card" data-slide-day="${escapeHtml(day.date)}">
         <div class="slide-cover" style="background-image: url('${url}'); background-color: var(--surface-2);">
           ${url ? '' : `<div class="slide-no-photo">${ids.length} piece${ids.length === 1 ? '' : 's'}</div>`}
         </div>
         <div class="slide-info">
-          <div class="slide-date">${escapeHtml(fmtDay(day.date))}</div>
+          <div class="slide-date">${escapeHtml(dateLabel)}</div>
           ${day.caption ? `<div class="slide-caption">${escapeHtml(day.caption)}</div>` : ''}
           <div class="slide-thumbs">${tinyThumbs}${ids.length > 4 ? `<div class="slide-tiny-more">+${ids.length - 4}</div>` : ''}</div>
         </div>
@@ -8960,27 +8964,28 @@ function rotationDayHtml(day) {
     const ids = [...day.itemIds];
     const items = ids.map(id => itemMap.get(id)).filter(Boolean);
     const url = day.photo ? blobToUrl(day.photo) : '';
+    const dateLabel = fmtDay(day.date) || 'Undated';
+    const itemRows = items.map(it => {
+      const u = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
+      const meta = [it.brand, it.color].filter(Boolean).join(' · ');
+      return `
+        <div class="slide-item-row">
+          <div class="slide-item-thumb" style="background-image:url('${u}')"></div>
+          <div class="slide-item-info">
+            <div class="slide-item-name">${escapeHtml(it.name || it.subtype || 'Untitled')}</div>
+            <div class="slide-item-meta muted">${escapeHtml(meta)}</div>
+          </div>
+        </div>
+      `;
+    }).join('') || '<div class="muted">No pieces tagged for this day.</div>';
     openModal(`
       <div class="slide-detail">
         ${url ? `<div class="slide-detail-photo" style="background-image: url('${url}');"></div>` : ''}
         <div class="slide-detail-meta">
-          <h2 style="margin: 0 0 4px;">${escapeHtml(fmtDay(day.date))}</h2>
+          <h2 style="margin: 0 0 4px;">${escapeHtml(dateLabel)}</h2>
           ${day.caption ? `<div class="muted" style="margin-bottom: 12px;">${escapeHtml(day.caption)}</div>` : ''}
           <div style="font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-muted); margin: 12px 0 8px;">${items.length} piece${items.length === 1 ? '' : 's'} worn</div>
-          <div class="slide-item-list">
-${items.map(it => {
-              const u = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
-              return `
-                <div class="slide-item-row">
-                  <div class="slide-item-thumb" style="background-image:url('${u}')"></div>
-                  <div class="slide-item-info">
-                    <div class="slide-item-name">${escapeHtml(it.name || it.subtype || '—')}</div>
-                    <div class="slide-item-meta muted">${escapeHtml([it.brand, it.color].filter(Boolean).join(' · '))}</div>
-                  </div>
-                </div>
-              `;
-            }).join('') || '<div class="muted">No pieces tagged for this day.</div>'}
-          </div>
+          <div class="slide-item-list">${itemRows}</div>
         </div>
       </div>
     `);
