@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-01 19:09:05 */
+/* Virtual Closet bundle — built 2026-05-01 20:05:33 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -8824,9 +8824,20 @@ function rotationDayHtml(day) {
 // gallery. Tap a day to see which closet pieces were worn.
 
 (function() {
+  // Coerce any date-ish value (string / Date / null) to a YYYY-MM-DD string.
+  function toIsoDate(d) {
+    if (!d) return '';
+    if (typeof d === 'string') return d;
+    if (d instanceof Date) {
+      if (isNaN(d)) return '';
+      return d.toISOString().slice(0, 10);
+    }
+    return String(d || '');
+  }
   function ymKey(iso) {
-    if (!iso || iso.length < 7) return '';
-    return iso.slice(0, 7); // YYYY-MM
+    const s = toIsoDate(iso);
+    if (!s || s.length < 7) return '';
+    return s.slice(0, 7); // YYYY-MM
   }
   function monthLabel(ym) {
     if (!ym || ym.length !== 7) return ym;
@@ -8835,11 +8846,12 @@ function rotationDayHtml(day) {
     return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   }
   function fmtDay(iso) {
-    if (!iso) return '';
+    const s = toIsoDate(iso);
+    if (!s) return '';
     try {
-      const d = new Date(iso + 'T00:00');
+      const d = new Date(s + 'T00:00');
       return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    } catch (_) { return iso; }
+    } catch (_) { return s; }
   }
 
   async function render(main) {
@@ -8853,22 +8865,26 @@ function rotationDayHtml(day) {
     const itemMap = new Map(itemsAll.map(i => [i.id, i]));
 
     // Build a per-day map: { date -> { photo, caption, itemIds: Set } }
+    // All keys are normalized to YYYY-MM-DD strings so downstream code is safe.
     const days = new Map();
     for (const d of dailyAll) {
-      if (!d.date) continue;
-      const entry = days.get(d.date) || { date: d.date, photo: null, caption: '', itemIds: new Set(), source: 'daily' };
+      const key = toIsoDate(d.date);
+      if (!key) continue;
+      const entry = days.get(key) || { date: key, photo: null, caption: '', itemIds: new Set(), source: 'daily' };
       if (d.photo) entry.photo = d.photo;
       if (d.caption) entry.caption = d.caption;
       (d.itemIds || []).forEach(id => entry.itemIds.add(id));
-      days.set(d.date, entry);
+      days.set(key, entry);
     }
     // Layer in wearLog dates from items so historical entries appear too,
     // even on days where there's no uploaded photo yet.
     for (const it of itemsAll) {
-      for (const date of (it.wearLog || [])) {
-        const entry = days.get(date) || { date, photo: null, caption: '', itemIds: new Set(), source: 'wearLog' };
+      for (const rawDate of (it.wearLog || [])) {
+        const key = toIsoDate(rawDate);
+        if (!key) continue;
+        const entry = days.get(key) || { date: key, photo: null, caption: '', itemIds: new Set(), source: 'wearLog' };
         entry.itemIds.add(it.id);
-        days.set(date, entry);
+        days.set(key, entry);
       }
     }
     const dayList = [...days.values()].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
@@ -8952,7 +8968,7 @@ function rotationDayHtml(day) {
           ${day.caption ? `<div class="muted" style="margin-bottom: 12px;">${escapeHtml(day.caption)}</div>` : ''}
           <div style="font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-muted); margin: 12px 0 8px;">${items.length} piece${items.length === 1 ? '' : 's'} worn</div>
           <div class="slide-item-list">
-            ${items.map(it => {
+${items.map(it => {
               const u = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
               return `
                 <div class="slide-item-row">
