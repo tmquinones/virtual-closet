@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-05-01 01:45:40 */
-/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
+/* Virtual Closet bundle — built 2026-05-01 17:57:26 */
+/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -1542,7 +1542,27 @@ function renderGrid() {
   }
   grid.innerHTML = items.map(itemCardHtml).join('');
   grid.querySelectorAll('[data-item-id]').forEach(el => {
-    el.addEventListener('click', () => openItemDetail(Number(el.dataset.itemId)));
+    el.addEventListener('click', (e) => {
+      // Don't open detail when clicking the heart
+      if (e.target.closest('.card-fav')) return;
+      openItemDetail(Number(el.dataset.itemId));
+    });
+  });
+  grid.querySelectorAll('[data-fav-id]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = Number(btn.dataset.favId);
+      const fresh = await dbGetItem(id);
+      const next = !fresh.favorite;
+      await dbUpdateItem(id, { favorite: next });
+      // Update the button visually without re-rendering everything
+      btn.classList.toggle('is-fav', next);
+      btn.textContent = next ? '♥' : '♡';
+      btn.setAttribute('title', next ? 'Unfavorite' : 'Favorite');
+      // Update the local cache so closetState reflects the change
+      const localItem = closetState.items.find(i => i.id === id);
+      if (localItem) localItem.favorite = next;
+    });
   });
 }
 
@@ -1626,9 +1646,17 @@ function itemCardHtml(item) {
   const total = 1 + (Array.isArray(item.photos) ? item.photos.length : 0);
   const badge = total > 1 ? `<div class="card-photo-count">▦ ${total}</div>` : '';
   const statusBadge = item.status ? `<div class="card-status-badge status-${item.status}">${escapeHtml(labelForStatus(item.status))}</div>` : '';
+  const favHtml = (window.ratingHelpers && window.ratingHelpers.favoriteHtml)
+    ? window.ratingHelpers.favoriteHtml(item)
+    : '';
+  const overall = (window.ratingHelpers && window.ratingHelpers.computeOverall)
+    ? window.ratingHelpers.computeOverall(item) : 0;
+  const ratingBadge = overall >= 4
+    ? `<div class="card-rating-badge">${overall.toFixed(1)} ★</div>`
+    : '';
   return `
     <div class="card" data-item-id="${item.id}">
-      <div class="card-image" style="background-image:url('${url}')">${badge}${statusBadge}</div>
+      <div class="card-image" style="background-image:url('${url}')">${badge}${statusBadge}${ratingBadge}${favHtml}</div>
       <div class="card-body">
         <div class="card-title">${escapeHtml(name)}</div>
         <div class="card-meta">${escapeHtml(meta) || '&nbsp;'}</div>
@@ -1677,6 +1705,14 @@ async function openItemDetail(id) {
           <div class="detail-row"><dt>Purchased</dt><dd>${fmtDate(item.purchaseDate)}</dd></div>
           <div class="detail-row"><dt>Price</dt><dd>${fmtCurrency(item.purchasePrice)}</dd></div>
           ${item.receipt ? `<div class="detail-row"><dt>Receipt</dt><dd>${item.receipt.type === 'application/pdf' ? 'PDF' : 'Image'} attached · <a href="#/receipts">view in Receipts tab</a></dd></div>` : ''}
+          ${(() => {
+            if (!window.ratingHelpers) return '';
+            const overall = window.ratingHelpers.computeOverall(item);
+            if (!overall && !item.favorite) return '';
+            const heart = item.favorite ? '<span style="color: #c44;">♥ Favorite</span>' : '';
+            const stars = overall ? window.ratingHelpers.starsHtml(overall, { showNumber: true }) : '';
+            return `<div class="detail-row"><dt>Rating</dt><dd>${heart} ${stars}</dd></div>`;
+          })()}
           ${(() => {
             if (!item.purchaseDate) return '';
             if (typeof daysUntilReturnDeadline !== 'function') return '';
@@ -1922,6 +1958,7 @@ async function openItemEdit(id) {
   wireFormCheckboxes();
   wireGarmentTypeChange();
   wireColorPickButton();
+  if (window.ratingHelpers) window.ratingHelpers.wireRatingInputs();
   wireReceiptControls(item);
   wireEditPhotoControls(item);
 
@@ -2316,6 +2353,7 @@ async function showFileForm(file) {
   wireFormCheckboxes();
   wireGarmentTypeChange();
   wireColorPickButton();
+  if (window.ratingHelpers) window.ratingHelpers.wireRatingInputs();
   wireReceiptControls({});
   refreshAddPhotoStrip();
 
@@ -2460,6 +2498,24 @@ function itemFormFieldsHtml(item) {
       <div class="field full">
         <label class="field-label" for="f_tags">Tags <span class="muted">(comma separated)</span></label>
         <input class="input" id="f_tags" type="text" placeholder="e.g. wedding, work-friendly, needs hemming" value="${escapeHtml((item.tags || []).join(', '))}" />
+      </div>
+
+      <div class="field full">
+        <label class="field-label">My rating</label>
+        <div class="rating-group">
+          <label class="check ${item.favorite ? 'checked' : ''}" style="display: inline-flex; gap: 6px; align-items: center; margin-bottom: 8px;">
+            <input type="checkbox" id="f_favorite" ${item.favorite ? 'checked' : ''} />
+            ❤ Favorite (heart on the closet card)
+          </label>
+          ${(window.ratingHelpers ? window.ratingHelpers.ratingInputHtml('rating', 'Overall', item.rating) : '')}
+          <div class="rating-axes">
+            ${(window.ratingHelpers ? window.ratingHelpers.ratingInputHtml('ratingFit', 'Fit', item.ratingFit) : '')}
+            ${(window.ratingHelpers ? window.ratingHelpers.ratingInputHtml('ratingComfort', 'Comfort', item.ratingComfort) : '')}
+            ${(window.ratingHelpers ? window.ratingHelpers.ratingInputHtml('ratingStyle', 'Style', item.ratingStyle) : '')}
+            ${(window.ratingHelpers ? window.ratingHelpers.ratingInputHtml('ratingVersatility', 'Versatility', item.ratingVersatility) : '')}
+          </div>
+          <div class="muted" style="font-size: 11px; margin-top: 6px;">Set Overall directly, or leave it blank and we'll average the four axes.</div>
+        </div>
       </div>
 
       <div class="field full">
@@ -2636,7 +2692,9 @@ function collectFormFieldsSilent() {
     seasons,
     tags,
     notes: get('f_notes').trim(),
-    status: get('f_status') || ''
+    status: get('f_status') || '',
+    favorite: !!(document.getElementById('f_favorite') || {}).checked,
+    ...(window.ratingHelpers ? window.ratingHelpers.collectRatings() : {}),
   };
 }
 
@@ -2670,7 +2728,9 @@ function collectFormFields() {
     seasons,
     tags,
     notes: document.getElementById('f_notes').value.trim(),
-    status: (document.getElementById('f_status') || {}).value || ''
+    status: (document.getElementById('f_status') || {}).value || '',
+    favorite: !!(document.getElementById('f_favorite') || {}).checked,
+    ...(window.ratingHelpers ? window.ratingHelpers.collectRatings() : {}),
   };
 }
 
@@ -2717,6 +2777,7 @@ async function reviewNext() {
   wireFormCheckboxes();
   wireGarmentTypeChange();
   wireColorPickButton();
+  if (window.ratingHelpers) window.ratingHelpers.wireRatingInputs();
   wireReceiptControls(item);
   wireEditPhotoControls(item);
 
@@ -4690,7 +4751,7 @@ function _renderTile(group) {
 /* ===== js/app-r10.js ===== */
 // app.js — main router and app glue
 
-const ROUTES = ['browse', 'closet', 'add', 'outfits', 'build', 'recover', 'audit', 'insights', 'wishlist', 'girlmath', 'trip', 'compare', 'capsule', 'returned', 'daily', 'slideshow', 'notes', 'receipts', 'returns-due', 'shop'];
+const ROUTES = ['browse', 'closet', 'add', 'outfits', 'build', 'recover', 'audit', 'insights', 'wishlist', 'girlmath', 'trip', 'compare', 'capsule', 'returned', 'daily', 'slideshow', 'notes', 'receipts', 'returns-due', 'shop', 'top10'];
 
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
@@ -4731,6 +4792,7 @@ async function router() {
     case 'receipts': if (typeof window.renderReceiptsView === 'function') await window.renderReceiptsView(main); break;
     case 'returns-due': if (typeof window.renderReturnsDueView === 'function') await window.renderReturnsDueView(main); break;
     case 'shop':     if (typeof window.renderShopView === 'function') await window.renderShopView(main); break;
+    case 'top10':    if (typeof window.renderTop10View === 'function') await window.renderTop10View(main); break;
     default:        await renderClosetView(main, params, true);
   }
 }
@@ -5543,6 +5605,24 @@ window.addEventListener('DOMContentLoaded', () => {
     };
     const total = buckets.donate.length + buckets.consign.length + buckets.repair.length + buckets.returned.length + buckets.sold.length;
 
+    // "Don't love, don't wear" candidates: low rating + low wear, status empty
+    const ninetyDaysAgo = new Date(); ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const ninetyIso = ninetyDaysAgo.toISOString().slice(0, 10);
+    const fb = window.ratingHelpers;
+    const dontLove = items.filter(i => {
+      if (i.status) return false;  // already flagged with some other status
+      if (i.favorite) return false;
+      const overall = fb ? fb.computeOverall(i) : 0;
+      const lowRating = (overall > 0 && overall < 3);
+      // Items that have an explicit low rating count regardless of wear
+      if (lowRating) return true;
+      // Or unrated AND not worn in 90 days (or ever)
+      const wears = (i.wearLog || []).filter(d => d >= ninetyIso);
+      const noRating = overall === 0;
+      const lowWear = wears.length === 0;
+      return noRating && lowWear;
+    }).slice(0, 30);  // cap so the page isn't a wall
+
     function section(title, list, color) {
       if (!list.length) return '';
       return `<h2 style="margin-top: 20px; font-size: 16px;"><span style="display:inline-block; width:8px; height:8px; background:${color}; border-radius:50%; margin-right:6px;"></span>${title} (${list.length})</h2>
@@ -5555,14 +5635,26 @@ window.addEventListener('DOMContentLoaded', () => {
     container.innerHTML = `
       <div class="audit-summary">
         <div><strong>${total}</strong> item${total === 1 ? '' : 's'} flagged for action across your closet.</div>
-        <div class="muted" style="font-size: 11.5px; margin-top: 4px;">To flag a piece, edit it and change its <strong>Status</strong> to Donate, Consign, Needs repair, Returned, or Sold.</div>
+        <div class="muted" style="font-size: 11.5px; margin-top: 4px;">To flag a piece, edit it and set its <strong>Status</strong> (Donate, Needs repair, Plan to sell, Selling, Returned, or Sold).</div>
       </div>
+      ${dontLove.length > 0 ? `
+        <h2 style="margin-top: 20px; font-size: 16px;">
+          <span style="display:inline-block; width:8px; height:8px; background:#a02020; border-radius:50%; margin-right:6px;"></span>
+          Don't love, don't wear (${dontLove.length})
+          <span class="muted" style="font-size: 11px; font-weight: 400; margin-left: 8px;">low rating or unrated + not worn in 90 days · consider donating or selling</span>
+        </h2>
+        <div class="audit-list">${dontLove.map(i => {
+          const overall = fb ? fb.computeOverall(i) : 0;
+          const right = `<div class="audit-dims"><span class="audit-q-pill" style="background:#a02020">${overall > 0 ? overall.toFixed(1) + '★' : 'unrated'}</span></div>`;
+          return rowHtml(i, right);
+        }).join('')}</div>
+      ` : ''}
       ${section('Donate', buckets.donate, '#a06b20')}
       ${section('Consign', buckets.consign, '#5a6b30')}
       ${section('Needs repair', buckets.repair, '#a02020')}
       ${section('Returned', buckets.returned, '#3c8282')}
       ${section('Sold / gone', buckets.sold, '#6b6b6b')}
-      ${total === 0 ? `<div class="empty" style="margin-top: 20px;"><div class="empty-title">Nothing flagged for action</div><p>Open any piece, click <strong>Edit</strong>, and set the <strong>Status</strong> dropdown to mark it for donation, consignment, repair, returned, or sold/gone.</p></div>` : ''}
+      ${total === 0 && dontLove.length === 0 ? `<div class="empty" style="margin-top: 20px;"><div class="empty-title">Nothing flagged for action</div><p>Rate your pieces (heart on the card, or stars in Edit) to surface decluttering candidates here. Or set <strong>Status</strong> on individual items to flag them directly.</p></div>` : ''}
     `;
     wireEdits(container);
   }
@@ -6847,6 +6939,15 @@ window.addEventListener('DOMContentLoaded', () => {
     main = main || document.getElementById('main');
     if (!main) return;
 
+    // Consume any Top 10 / external preload
+    if (window._cmpPreload) {
+      const p = window._cmpPreload;
+      if (p && !picked.some(x => x.source === p.source && x.id === p.id) && picked.length < MAX_COLS) {
+        picked.push({ source: p.source, id: p.id });
+      }
+      window._cmpPreload = null;
+    }
+
     const resolved = (await Promise.all(picked.map(resolveItem))).filter(Boolean);
 
     main.innerHTML = `
@@ -6912,6 +7013,12 @@ window.addEventListener('DOMContentLoaded', () => {
             ${compareRow('Price',     items, (it) => fmtMoney(it.purchasePrice ?? it.targetPrice))}
             ${compareRow('Date',      items, (it, src) => src === 'wishlist' ? '—' : fmtDate(it.purchaseDate))}
             ${compareRow('Wears',     items, (it, src) => src === 'wishlist' ? '—' : (it.wearLog?.length || 0))}
+            ${compareRow('Rating',    items, (it) => {
+              if (!window.ratingHelpers) return '—';
+              const v = window.ratingHelpers.computeOverall(it);
+              const fav = it.favorite ? '♥ ' : '';
+              return v > 0 ? fav + window.ratingHelpers.starsHtml(v, { showNumber: true }) : (it.favorite ? '♥' : '—');
+            })}
             ${compareRow('Status',    items, (it, src) => src === 'wishlist' ? 'On wishlist' : (it.status ? labelForStatus(it.status) : 'Keep'))}
             ${compareRow('Lifestyle', items, (it) => (it.lifestyleCategories || []).map(labelForLifestyle).join(', ') || '—')}
             ${compareRow('Seasons',   items, (it) => (it.seasons || []).map(labelForSeason).join(', ') || '—')}
@@ -7333,6 +7440,129 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   window.flatlayHtmlForOutfit = flatlayHtmlForOutfit;
+})();
+
+
+/* ===== js/ratings-r1.js ===== */
+// ratings-r1.js — closet item self-rating system.
+//
+// Each item stores:
+//   - favorite: boolean (heart toggle)
+//   - rating: number 0-5 (overall)
+//   - ratingFit, ratingComfort, ratingStyle, ratingVersatility: 0-5
+//
+// If overall `rating` is unset but the 4 axes are set, computeOverall()
+// derives one. Otherwise overall takes precedence.
+//
+// Visibility-to-friends ships when Supabase wires up; data persists now.
+
+(function() {
+  // Compute overall rating: if explicit, use it. Otherwise average of axes.
+  function computeOverall(item) {
+    if (!item) return 0;
+    const explicit = Number(item.rating);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    const axes = [item.ratingFit, item.ratingComfort, item.ratingStyle, item.ratingVersatility]
+      .map(Number).filter(n => Number.isFinite(n) && n > 0);
+    if (axes.length === 0) return 0;
+    return axes.reduce((a, b) => a + b, 0) / axes.length;
+  }
+
+  // Render compact stars (read-only). value 0-5 (can be fractional).
+  function starsHtml(value, opts = {}) {
+    const v = Math.max(0, Math.min(5, Number(value) || 0));
+    if (v === 0 && opts.hideEmpty) return '';
+    const filled = Math.round(v);  // round to nearest whole star for display
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      stars.push(`<span class="star ${i <= filled ? 'filled' : ''}">${i <= filled ? '★' : '☆'}</span>`);
+    }
+    const numLabel = opts.showNumber && v > 0 ? `<span class="star-num">${v.toFixed(1)}</span>` : '';
+    return `<span class="stars" title="${v.toFixed(1)} / 5">${stars.join('')}${numLabel}</span>`;
+  }
+
+  // Editable star widget. `name` becomes the input id and form field name.
+  // `current` is 0-5 (0 = unset).
+  function ratingInputHtml(name, label, current) {
+    const v = Math.max(0, Math.min(5, Number(current) || 0));
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      stars.push(`<button type="button" class="star-btn ${i <= v ? 'filled' : ''}" data-rate-name="${name}" data-rate-value="${i}">${i <= v ? '★' : '☆'}</button>`);
+    }
+    return `
+      <div class="rating-row">
+        <span class="rating-row-label">${label}</span>
+        <div class="rating-stars" data-rate-group="${name}">${stars.join('')}</div>
+        <button type="button" class="rating-clear" data-rate-clear="${name}" title="Clear">×</button>
+        <input type="hidden" id="${name}" value="${v || ''}" />
+      </div>
+    `;
+  }
+
+  // Wire up rating star buttons + clear button. Call after rendering a form
+  // that contains ratingInputHtml() outputs.
+  function wireRatingInputs(rootEl) {
+    const root = rootEl || document;
+    root.querySelectorAll('[data-rate-name]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.dataset.rateName;
+        const val = Number(btn.dataset.rateValue);
+        const hidden = root.querySelector(`#${name}`);
+        if (hidden) hidden.value = String(val);
+        // Update visual state in this group
+        const group = root.querySelector(`[data-rate-group="${name}"]`);
+        if (group) {
+          group.querySelectorAll('button').forEach(b => {
+            const v = Number(b.dataset.rateValue);
+            b.classList.toggle('filled', v <= val);
+            b.textContent = v <= val ? '★' : '☆';
+          });
+        }
+      });
+    });
+    root.querySelectorAll('[data-rate-clear]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.dataset.rateClear;
+        const hidden = root.querySelector(`#${name}`);
+        if (hidden) hidden.value = '';
+        const group = root.querySelector(`[data-rate-group="${name}"]`);
+        if (group) {
+          group.querySelectorAll('button').forEach(b => {
+            b.classList.remove('filled');
+            b.textContent = '☆';
+          });
+        }
+      });
+    });
+  }
+
+  // Read all rating values from a form into a plain object
+  function collectRatings(rootEl) {
+    const root = rootEl || document;
+    const fields = ['rating', 'ratingFit', 'ratingComfort', 'ratingStyle', 'ratingVersatility'];
+    const out = {};
+    for (const f of fields) {
+      const el = root.querySelector(`#${f}`);
+      const v = el && el.value ? Number(el.value) : null;
+      out[f] = (v && v > 0) ? v : null;
+    }
+    return out;
+  }
+
+  // Heart toggle helper (used on closet cards)
+  function favoriteHtml(item, opts = {}) {
+    const isFav = !!item.favorite;
+    return `<button class="card-fav ${isFav ? 'is-fav' : ''}" data-fav-id="${item.id}" title="${isFav ? 'Unfavorite' : 'Favorite'}" aria-label="${isFav ? 'Unfavorite' : 'Favorite'}">${isFav ? '♥' : '♡'}</button>`;
+  }
+
+  window.ratingHelpers = {
+    computeOverall,
+    starsHtml,
+    ratingInputHtml,
+    wireRatingInputs,
+    collectRatings,
+    favoriteHtml,
+  };
 })();
 
 
@@ -9474,6 +9704,108 @@ function rotationDayHtml(day) {
 
   function maybeRender() {
     if (location.hash === '#/shop') render(document.getElementById('main'));
+  }
+  window.addEventListener('hashchange', maybeRender);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', maybeRender);
+  else maybeRender();
+})();
+
+
+/* ===== js/top10-r1.js ===== */
+// top10-r1.js — "My Top 10" view at #/top10
+// Lists the highest-rated items in the active closet. Each card has:
+//   - Rank number (1..10)
+//   - Item photo + name + brand · color
+//   - Computed overall rating (stars)
+//   - Favorite heart if marked
+//   - "Compare" button that pushes the item into the Compare tool
+
+(function() {
+  async function render(main) {
+    main = main || document.getElementById('main');
+    if (!main) return;
+    const all = await dbGetAllItems();
+    const active = (typeof activeItems === 'function') ? activeItems(all) : all;
+    const fb = window.ratingHelpers;
+    const ranked = active
+      .map(it => ({ it, score: fb ? fb.computeOverall(it) : 0 }))
+      .filter(x => x.score > 0 || x.it.favorite)
+      .sort((a, b) => {
+        // Favorites bubble up if scores tie
+        if (b.score !== a.score) return b.score - a.score;
+        return (b.it.favorite ? 1 : 0) - (a.it.favorite ? 1 : 0);
+      })
+      .slice(0, 10);
+
+    main.innerHTML = `
+      <div class="page-header">
+        <div class="page-title-group">
+          <h1>My Top 10</h1>
+          <div class="page-subtitle">${ranked.length} of your highest-rated pieces</div>
+        </div>
+        <a href="#/compare" class="btn">Open Compare</a>
+      </div>
+
+      <div class="card" style="padding: 14px 16px; margin-bottom: 16px;">
+        <div style="font-size: 13px; line-height: 1.55;">
+          Items appear here once you rate them (open any piece, hit Edit, set Overall stars or any of Fit/Comfort/Style/Versatility). Hearted items count even without a numeric rating.
+        </div>
+      </div>
+
+      ${ranked.length === 0 ? `
+        <div class="empty">
+          <div class="empty-title">No rated items yet</div>
+          <p>Tap the heart on a closet card to favorite a piece, or open Edit and use the rating widget for stars. Your top 10 will fill in as you rate.</p>
+        </div>
+      ` : `
+        <div class="top10-list">
+          ${ranked.map((r, i) => top10CardHtml(r.it, r.score, i + 1)).join('')}
+        </div>
+      `}
+    `;
+
+    main.querySelectorAll('[data-top10-open]').forEach(b => {
+      b.addEventListener('click', () => {
+        const id = Number(b.dataset.top10Open);
+        if (typeof openItemDetail === 'function') openItemDetail(id);
+      });
+    });
+    main.querySelectorAll('[data-top10-compare]').forEach(b => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = Number(b.dataset.top10Compare);
+        // Open compare with this item pre-loaded
+        window._cmpPreload = { source: 'closet', id };
+        location.hash = '#/compare';
+      });
+    });
+  }
+
+  function top10CardHtml(it, score, rank) {
+    const url = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
+    const fb = window.ratingHelpers;
+    const stars = score > 0 && fb ? fb.starsHtml(score, { showNumber: true }) : '';
+    const heart = it.favorite ? '<span class="top10-heart">♥</span>' : '';
+    return `
+      <div class="top10-row" data-top10-open="${it.id}">
+        <div class="top10-rank">#${rank}</div>
+        <div class="top10-thumb" style="background-image:url('${url}')"></div>
+        <div class="top10-info">
+          <div class="top10-name">${escapeHtml(it.name || it.subtype || 'Untitled')} ${heart}</div>
+          <div class="top10-meta muted">${escapeHtml([it.brand, it.color, labelForGarmentType(it.garmentType)].filter(Boolean).join(' · '))}</div>
+          <div class="top10-stars">${stars}</div>
+        </div>
+        <div class="top10-actions">
+          <button class="btn btn-sm" data-top10-compare="${it.id}">Compare</button>
+        </div>
+      </div>
+    `;
+  }
+
+  window.renderTop10View = function(main) { return render(main); };
+
+  function maybeRender() {
+    if (location.hash === '#/top10') render(document.getElementById('main'));
   }
   window.addEventListener('hashchange', maybeRender);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', maybeRender);
