@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-01 01:11:04 */
+/* Virtual Closet bundle — built 2026-05-01 01:26:05 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -7336,6 +7336,10 @@ window.addEventListener('DOMContentLoaded', () => {
       label: 'Pajamas (top & bottom)',
       filter: isPajamaItem,
     },
+    sports_bra: {
+      label: 'Sports Bras',
+      filter: it => it.subtype === 'Sports bra',
+    },
     shoes: {
       label: 'Shoes',
       filter: it => it.garmentType === 'shoes',
@@ -7356,6 +7360,7 @@ window.addEventListener('DOMContentLoaded', () => {
       tagline: 'Everyday mix-and-match wardrobe',
       targets: {
         tops_long: 2, tops_short: 2, tops_tank: 1,
+        sports_bra: 1,
         bottoms: 3, dresses: 1, outerwear: 1,
         intimates_swim: 0, pajamas: 2,
         shoes: 2, accessories: 3,
@@ -7366,6 +7371,7 @@ window.addEventListener('DOMContentLoaded', () => {
       tagline: 'Sport-focused — sweat, lift, run, court',
       targets: {
         tops_long: 1, tops_short: 3, tops_tank: 2,
+        sports_bra: 3,
         bottoms: 4, dresses: 0, outerwear: 2,
         intimates_swim: 0, pajamas: 0,
         shoes: 2, accessories: 2,
