@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-01 17:57:26 */
+/* Virtual Closet bundle — built 2026-05-01 19:09:05 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -8580,7 +8580,7 @@ function rotationDayHtml(day) {
     selectedItemIds = new Set();
 
     const all = await dbGetAllDaily();
-    all.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    all.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
     main.innerHTML = `
       <div class="page-header">
@@ -8871,7 +8871,7 @@ function rotationDayHtml(day) {
         days.set(date, entry);
       }
     }
-    const dayList = [...days.values()].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const dayList = [...days.values()].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
     // Group by month
     const months = new Map();
@@ -9138,7 +9138,7 @@ function rotationDayHtml(day) {
     if (!main) return;
     const items = await dbGetAllItems();
     const withReceipt = items.filter(i => i.receipt);
-    withReceipt.sort((a, b) => (b.purchaseDate || '').localeCompare(a.purchaseDate || ''));
+    withReceipt.sort((a, b) => String(b.purchaseDate || '').localeCompare(String(a.purchaseDate || '')));
 
     const totalSpent = withReceipt.reduce((s, i) => s + (Number(i.purchasePrice) || 0), 0);
 
