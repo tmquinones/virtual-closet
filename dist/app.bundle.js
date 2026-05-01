@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-01 01:26:05 */
+/* Virtual Closet bundle — built 2026-05-01 01:32:04 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -6792,12 +6792,12 @@ window.addEventListener('DOMContentLoaded', () => {
 /* ===== js/compare-r1.js ===== */
 // compare-r1.js — Side-by-side item comparison at #/compare
 // Pulls items from BOTH closet and wishlist via a unified picker.
-// Up to 4 columns. Rows: photo, name, brand, color, size, price, etc.
+// Up to 8 columns. Rows: photo, name, brand, color, size, price, etc.
 
 (function() {
   // Selected for compare: array of { source: 'closet' | 'wishlist', id }
   let picked = [];
-  const MAX_COLS = 4;
+  const MAX_COLS = 8;
 
   async function loadAllSources() {
     const closet = await dbGetAllItems();
