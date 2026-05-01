@@ -2635,3 +2635,84 @@ body.theme-dark .slide-tiny-thumb {
   border-color: var(--text);
   border-left: 3px solid var(--text);
 }
+
+/* ==================================================================
+   Rotation flat-lay (Phase 30) — paper-doll render mode
+   ================================================================== */
+.rotation-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.rotation-view-toggle button {
+  background: var(--surface);
+  border: none;
+  padding: 6px 12px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: inherit;
+}
+.rotation-view-toggle button.active {
+  background: var(--text);
+  color: var(--bg);
+}
+.rotation-view-toggle button + button {
+  border-left: 1px solid var(--border-strong);
+}
+
+/* Flat-lay grid: bigger cards in flat-lay mode */
+.rotation-grid:has(.mode-flatlay) {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.rotation-day-card.mode-flatlay {
+  padding: 12px;
+}
+.rotation-day-card.mode-flatlay .rotation-day-items {
+  display: none;
+}
+.flatlay-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 5 / 8;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 6px 0 8px;
+}
+.flatlay-zone {
+  position: absolute;
+  background: transparent;
+  transition: transform 0.18s ease;
+}
+.flatlay-zone:hover {
+  z-index: 99 !important;
+  transform-origin: center;
+}
+.flatlay-thumb {
+  width: 100%;
+  height: 100%;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.06));
+}
+.flatlay-zone-shoes .flatlay-thumb,
+.flatlay-zone-accent .flatlay-thumb,
+.flatlay-zone-extra .flatlay-thumb {
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.08));
+}
+.flatlay-empty {
+  padding: 30px 10px;
+  text-align: center;
+  font-size: 11px;
+}
+
+/* Dark-mode tweaks for flat-lay (so white-bg garment photos don't glow) */
+body.theme-dark .flatlay-thumb {
+  filter: brightness(0.95) drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+}

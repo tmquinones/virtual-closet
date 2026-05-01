@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-04-30 23:31:07 */
-/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
+/* Virtual Closet bundle — built 2026-05-01 01:11:04 */
+/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -7198,6 +7198,90 @@ window.addEventListener('DOMContentLoaded', () => {
 })();
 
 
+/* ===== js/flatlay-r1.js ===== */
+// flatlay-r1.js — Paper-doll / flat-lay render for outfit cards.
+//
+// Given an outfit (array of { role, item }), composes a stylized
+// fashion-magazine flat-lay using the actual garment photos. Each piece
+// is placed in a fixed zone (outerwear / top / bottom / shoes / accent)
+// inside a portrait-aspect stage. Pure CSS, no AI.
+//
+// Exposed via window.flatlayHtmlForOutfit(items, opts).
+
+(function() {
+  // Zone definitions inside a 200x320 stage. Coordinates are CSS percent.
+  // top + bottom may be replaced by a single dress (zone: dress).
+  // Layer (outerwear) is offset so it visually sits behind/beside the top.
+  const ZONES = {
+    layer:  { left: '50%',  top: '4%',  width: '70%', height: '36%', zIndex: 1, opacity: 0.92, transform: 'translate(-58%, 0) rotate(-4deg)' },
+    top:    { left: '50%',  top: '6%',  width: '60%', height: '32%', zIndex: 3, opacity: 1,    transform: 'translate(-50%, 0)' },
+    dress:  { left: '50%',  top: '6%',  width: '60%', height: '60%', zIndex: 3, opacity: 1,    transform: 'translate(-50%, 0)' },
+    bottom: { left: '50%',  top: '38%', width: '54%', height: '32%', zIndex: 2, opacity: 1,    transform: 'translate(-50%, 0)' },
+    shoes:  { left: '50%',  top: '74%', width: '52%', height: '14%', zIndex: 4, opacity: 1,    transform: 'translate(-50%, 0)' },
+    accent: { left: '6%',   top: '70%', width: '24%', height: '22%', zIndex: 4, opacity: 1,    transform: 'rotate(-6deg)' },
+    extra:  { left: '74%',  top: '70%', width: '22%', height: '20%', zIndex: 4, opacity: 1,    transform: 'rotate(4deg)' },
+  };
+
+  function blobUrlFor(item) {
+    if (!item) return '';
+    if (item.thumb) return blobToUrl(item.thumb);
+    if (item.photo) return blobToUrl(item.photo);
+    return '';
+  }
+
+  function escape(s) {
+    return (typeof escapeHtml === 'function') ? escapeHtml(s) : String(s || '');
+  }
+
+  // Map a role label to a zone key.
+  // role values from generateRotation: 'Top', 'Bottom', 'Layer', 'Shoes', 'Accent', 'Dress'
+  function zoneForRole(role) {
+    switch (role) {
+      case 'Layer':   return 'layer';
+      case 'Top':     return 'top';
+      case 'Dress':   return 'dress';
+      case 'Bottom':  return 'bottom';
+      case 'Shoes':   return 'shoes';
+      case 'Accent':  return 'accent';
+      default:        return 'extra';
+    }
+  }
+
+  // Build the flat-lay HTML string from outfit items (array of { role, item }).
+  // `opts` is reserved for future extensibility.
+  function flatlayHtmlForOutfit(items, opts) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return '<div class="flatlay-empty muted">No items</div>';
+    }
+    // Track which zones are taken so duplicates spill into 'extra'
+    const used = new Set();
+    const layers = items.map(({ role, item }) => {
+      let zone = zoneForRole(role);
+      if (used.has(zone)) zone = 'extra';
+      used.add(zone);
+      const url = blobUrlFor(item);
+      const z = ZONES[zone] || ZONES.extra;
+      const title = escape((item && (item.name || item.subtype || '')) + ' · ' + role);
+      return `
+        <div class="flatlay-zone flatlay-zone-${zone}"
+             style="left:${z.left};top:${z.top};width:${z.width};height:${z.height};z-index:${z.zIndex};opacity:${z.opacity};transform:${z.transform};"
+             title="${title}">
+          <div class="flatlay-thumb" style="background-image:url('${url}')"></div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="flatlay-stage">
+        ${layers}
+      </div>
+    `;
+  }
+
+  window.flatlayHtmlForOutfit = flatlayHtmlForOutfit;
+})();
+
+
 /* ===== js/capsule-r1.js ===== */
 // capsule-r1.js — Capsule wardrobe planner at #/capsule
 
@@ -7299,6 +7383,11 @@ window.addEventListener('DOMContentLoaded', () => {
   // Cache the most recent rotation so feedback buttons can refresh it without
   // a full regenerate (which would replace just-liked outfits).
   let _lastRotationContext = null;
+  // 'grid' (default — small role-labeled thumbs) or 'flatlay' (paper-doll).
+  let _rotationViewMode = (function() {
+    try { return localStorage.getItem('vc:rotationViewMode') || 'grid'; }
+    catch (_) { return 'grid'; }
+  })();
 
   function categoryLabel(cat) { return CATEGORY_DEFS[cat]?.label || cat; }
   function filterForCategory(cat, items) {
@@ -7838,6 +7927,10 @@ window.addEventListener('DOMContentLoaded', () => {
           👍 ${summary.liked} · 👎 ${summary.disliked} · 🔒 ${summary.pinned} · ⚠ ${summary.badPairCount} bad pair${summary.badPairCount === 1 ? '' : 's'}
         </span>
       </div>
+      <div class="rotation-view-toggle">
+        <button data-view-mode="grid" class="${_rotationViewMode === 'grid' ? 'active' : ''}">📋 Grid</button>
+        <button data-view-mode="flatlay" class="${_rotationViewMode === 'flatlay' ? 'active' : ''}">👗 Flat-lay</button>
+      </div>
       <div class="muted" style="font-size: 11px; margin-bottom: 14px;">
         Tap 👍 to keep an outfit, 👎 to never see it again, 🔒 to lock it to that day. The system learns from each tap.
       </div>
@@ -7878,6 +7971,18 @@ window.addEventListener('DOMContentLoaded', () => {
     const { capsule, itemMap, rotation } = ctx;
     const fb = window.outfitFeedback;
     if (!fb) return;
+
+    document.querySelectorAll('[data-view-mode]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.viewMode;
+        if (mode === _rotationViewMode) return;
+        _rotationViewMode = mode;
+        try { localStorage.setItem('vc:rotationViewMode', mode); } catch (_) {}
+        // Re-render the rotation modal with new mode
+        closeModal();
+        setTimeout(() => openRotationModal(capsule), 50);
+      });
+    });
 
     document.getElementById('rotation-regenerate')?.addEventListener('click', () => {
       const shuffled = JSON.parse(JSON.stringify(capsule));
@@ -8030,14 +8135,17 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function rotationDayHtml(day) {
+function rotationDayHtml(day) {
     const fb = window.outfitFeedback;
     const ctx = _lastRotationContext;
     const isPinned = ctx && fb && fb.getPinned(ctx.capsule.id, day.day);
     const isLiked = day.liked;
-    return `
-      <div class="rotation-day-card ${isLiked ? 'is-liked' : ''} ${isPinned ? 'is-pinned' : ''}">
-        <div class="rotation-day-num">Day ${day.day}${isPinned ? ' 🔒' : ''}${isLiked ? ' 👍' : ''}</div>
+
+    let bodyHtml;
+    if (_rotationViewMode === 'flatlay' && typeof window.flatlayHtmlForOutfit === 'function') {
+      bodyHtml = window.flatlayHtmlForOutfit(day.items);
+    } else {
+      bodyHtml = `
         <div class="rotation-day-items">
           ${day.items.map(({ role, item }) => {
             const url = item.thumb ? blobToUrl(item.thumb) : (item.photo ? blobToUrl(item.photo) : '');
@@ -8049,6 +8157,13 @@ window.addEventListener('DOMContentLoaded', () => {
             `;
           }).join('')}
         </div>
+      `;
+    }
+
+    return `
+      <div class="rotation-day-card ${isLiked ? 'is-liked' : ''} ${isPinned ? 'is-pinned' : ''} mode-${_rotationViewMode}">
+        <div class="rotation-day-num">Day ${day.day}${isPinned ? ' 🔒' : ''}${isLiked ? ' 👍' : ''}</div>
+        ${bodyHtml}
         <div class="rotation-day-actions">
           <button class="rotation-fb-btn" data-day-like="${day.day}" title="Like this outfit">👍</button>
           <button class="rotation-fb-btn" data-day-dislike="${day.day}" title="Skip — never show again">👎</button>
