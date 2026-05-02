@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-02 02:02:55 */
+/* Virtual Closet bundle — built 2026-05-02 02:07:13 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -9914,178 +9914,100 @@ function rotationDayHtml(day) {
 
 /* ===== js/cartimport-r1.js ===== */
 // cartimport-r1.js — Cart-import setup view at #/cart-import
-//
-// Generates a one-click bookmarklet the user drags to their browser bookmarks
-// bar. When clicked on any cart page, the bookmarklet scrapes product items
-// (using site-specific selectors for the brands we know, JSON-LD fallback
-// for the rest) and opens the user's closet at /#/wishlist?cartImport=...
-// with a base64-encoded JSON payload. The wishlist view decodes and offers
-// to import.
+// Bookmarklet drag-and-drop. Click on any cart page to send items to wishlist.
 
 (function() {
-  // The closet's destination URL — this is where the bookmarklet sends its
-  // payload. Hard-coded for the github.io deploy; could be overridden when
-  // self-hosting.
-  const CLOSET_URL = 'https://tmquinones.github.io/virtual-closet/';
+  var CLOSET_URL = 'https://tmquinones.github.io/virtual-closet/';
 
-  // The actual bookmarklet code, as a single-line string.
-  // Site-specific scrapers + JSON-LD fallback. Cap at 25 items per click.
-  // Keep this lean — bookmarklets have a ~5–8KB URL limit in many browsers.
-  const BOOKMARKLET_BODY = `
-(function(){
-  function txt(el,sel){var n=el.querySelector(sel);return n?(n.textContent||'').trim():'';}
-  function attr(el,sel,a){var n=el.querySelector(sel);return n?(n.getAttribute(a)||'').trim():'';}
-  function abs(u){if(!u)return '';try{return new URL(u,location.href).href;}catch(_){return u;}}
-  function priceOf(s){if(!s)return null;var m=String(s).replace(/[^\\d.,]/g,'').replace(/,/g,'');var n=parseFloat(m);return isNaN(n)?null:n;}
-  var host=location.hostname.toLowerCase();
-  var items=[];
-  function add(o){if(!o||!o.name)return;items.push({name:o.name,brand:o.brand||'',color:o.color||'',size:o.size||'',price:o.price==null?null:Number(o.price),url:abs(o.url||location.href),imageUrl:abs(o.imageUrl||'')});}
+  // Bookmarklet body kept as one big string with single-quote concatenation
+  // (no template literal, no // comments) so it survives encoding cleanly.
+  var BMK = ''
+    + "(function(){"
+    + "function txt(el,sel){var n=el.querySelector(sel);return n?(n.textContent||'').trim():'';}"
+    + "function attr(el,sel,a){var n=el.querySelector(sel);return n?(n.getAttribute(a)||'').trim():'';}"
+    + "function abs(u){if(!u)return '';try{return new URL(u,location.href).href;}catch(_){return u;}}"
+    + "function priceOf(s){if(!s)return null;var m=String(s).replace(/[^\\d.,]/g,'').replace(/,/g,'');var n=parseFloat(m);return isNaN(n)?null:n;}"
+    + "var host=location.hostname.toLowerCase();"
+    + "var items=[];"
+    + "function add(o){if(!o||!o.name)return;items.push({name:o.name,brand:o.brand||'',color:o.color||'',size:o.size||'',price:o.price==null?null:Number(o.price),url:abs(o.url||location.href),imageUrl:abs(o.imageUrl||'')});}"
 
-  // ---- Site-specific selectors ----
-  if(host.indexOf('lululemon')>-1){
-    document.querySelectorAll('[data-testid*="cart"]:is(article,div,li,[role="listitem"])').forEach(function(el){
-      add({name:txt(el,'[data-testid*="title"],h3,h4,a'),brand:'Lululemon',color:txt(el,'[data-testid*="color"]'),size:txt(el,'[data-testid*="size"]'),price:priceOf(txt(el,'[data-testid*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
-    });
-  } else if(host.indexOf('vuoriclothing')>-1){
-    document.querySelectorAll('[class*="cart-item"],[class*="LineItem"],[data-testid*="cart-item"]').forEach(function(el){
-      add({name:txt(el,'h3,h4,a,[class*="title"]'),brand:'Vuori',color:txt(el,'[class*="color"],[class*="variant"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
-    });
-  } else if(host.indexOf('aloyoga')>-1 || host.indexOf('alo')===0){
-    document.querySelectorAll('[class*="cart-item"],[class*="line-item"]').forEach(function(el){
-      add({name:txt(el,'a,h3,h4'),brand:'Alo Yoga',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
-    });
-  } else if(host.indexOf('patagonia')>-1){
-    document.querySelectorAll('[class*="cart"][class*="item"],[data-test*="cart-line"]').forEach(function(el){
-      add({name:txt(el,'a,h3,h4,[class*="name"]'),brand:'Patagonia',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
-    });
-  } else if(host.indexOf('rei.com')>-1){
-    document.querySelectorAll('[class*="cart"][class*="item"],[data-ui*="cart-line"]').forEach(function(el){
-      add({name:txt(el,'a,[class*="title"]'),brand:'REI',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
-    });
-  } else if(host.indexOf('athleta')>-1){
-    document.querySelectorAll('[class*="cart-item"],[class*="line-item"]').forEach(function(el){
-      add({name:txt(el,'a,h3,[class*="name"]'),brand:'Athleta',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
-    });
-  } else if(host.indexOf('ae.com')>-1 || host.indexOf('americaneagle')>-1){
-    document.querySelectorAll('[class*="cart-item"],[class*="basket-item"]').forEach(function(el){
-      add({name:txt(el,'a,h3,[class*="name"]'),brand:'American Eagle',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
-    });
-  } else if(host.indexOf('varley')>-1){
-    document.querySelectorAll('[class*="cart-item"],[class*="line-item"],[class*="LineItem"],[class*="cart_item"]').forEach(function(el){
-      var img=el.querySelector('img'); var priceText=(el.textContent||'').match(/\\$\\d[\\d,.]*/);
-      if(!img||!priceText) return;
-      add({name:txt(el,'a,h2,h3,h4,[class*="title"],[class*="name"],[class*="product"]'),brand:'Varley',color:txt(el,'[class*="color"],[class*="variant"],[class*="option"]'),size:txt(el,'[class*="size"]'),price:priceOf(priceText[0]),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
-    });
-  }
+    + "var siteBrand={lululemon:'Lululemon',vuori:'Vuori',aloyoga:'Alo Yoga',patagonia:'Patagonia','rei.com':'REI',athleta:'Athleta','ae.com':'American Eagle',americaneagle:'American Eagle',varley:'Varley'};"
+    + "var brand='';for(var k in siteBrand){if(host.indexOf(k)>-1){brand=siteBrand[k];break;}}"
 
-  // ---- Generic DOM scrape (any site) — runs if site-specific found nothing.
-  // Looks for elements with cart/line-item-ish class names that contain BOTH
-  // an <img> and a $-formatted price. Filters out container divs.
-  if(items.length===0){
-    var nodeSet=new Set();
-    document.querySelectorAll('[class*="cart-item"],[class*="line-item"],[class*="LineItem"],[class*="cart_item"],[class*="basket-item"],[class*="bag-item"],[class*="cart-line"],[data-testid*="cart-item"]').forEach(function(el){
-      // Skip if a parent already qualified (avoid double-counting nested)
-      var p=el.parentElement; while(p){if(nodeSet.has(p))return;p=p.parentElement;}
-      var img=el.querySelector('img');
-      var priceText=(el.textContent||'').match(/\\$\\d[\\d,.]*/);
-      if(!img||!priceText) return;
-      nodeSet.add(el);
-      add({name:txt(el,'a,h2,h3,h4,[class*="title"],[class*="name"],[class*="product"]'),brand:'',color:txt(el,'[class*="color"],[class*="variant"],[class*="option"]'),size:txt(el,'[class*="size"]'),price:priceOf(priceText[0]),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
-    });
-  }
+    + "var sel='[class*=\"cart-item\"],[class*=\"line-item\"],[class*=\"LineItem\"],[class*=\"cart_item\"],[class*=\"basket-item\"],[class*=\"bag-item\"],[class*=\"cart-line\"],[data-testid*=\"cart-item\"],[class*=\"cart\"][class*=\"item\"]';"
+    + "var nodeSet=new Set();"
+    + "document.querySelectorAll(sel).forEach(function(el){"
+    +   "var p=el.parentElement;while(p){if(nodeSet.has(p))return;p=p.parentElement;}"
+    +   "var img=el.querySelector('img');"
+    +   "var priceText=(el.textContent||'').match(/\\$\\d[\\d,.]*/);"
+    +   "if(!img||!priceText)return;"
+    +   "nodeSet.add(el);"
+    +   "add({name:txt(el,'a,h2,h3,h4,[class*=\"title\"],[class*=\"name\"],[class*=\"product\"]'),brand:brand,color:txt(el,'[class*=\"color\"],[class*=\"variant\"],[class*=\"option\"]'),size:txt(el,'[class*=\"size\"]'),price:priceOf(priceText[0]),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});"
+    + "});"
 
-  // ---- JSON-LD final fallback (works on product pages mostly) ----
-  if(items.length===0){
-    document.querySelectorAll('script[type="application/ld+json"]').forEach(function(s){
-      try{
-        var data=JSON.parse(s.textContent);
-        var arr=Array.isArray(data)?data:[data];
-        arr.forEach(function(d){
-          if(d['@type']==='Product'){
-            var offers=d.offers&&(Array.isArray(d.offers)?d.offers[0]:d.offers);
-            add({name:d.name,brand:(d.brand&&(d.brand.name||d.brand))||'',color:d.color,price:offers&&priceOf(offers.price),url:d.url||location.href,imageUrl:Array.isArray(d.image)?d.image[0]:d.image});
-          }
-        });
-      }catch(_){}
-    });
-  }
+    + "if(items.length===0){"
+    +   "document.querySelectorAll('script[type=\"application/ld+json\"]').forEach(function(s){"
+    +     "try{var data=JSON.parse(s.textContent);var arr=Array.isArray(data)?data:[data];"
+    +     "arr.forEach(function(d){"
+    +       "if(d['@type']==='Product'){"
+    +         "var offers=d.offers&&(Array.isArray(d.offers)?d.offers[0]:d.offers);"
+    +         "add({name:d.name,brand:(d.brand&&(d.brand.name||d.brand))||brand,color:d.color,price:offers&&priceOf(offers.price),url:d.url||location.href,imageUrl:Array.isArray(d.image)?d.image[0]:d.image});"
+    +       "}"
+    +     "});"
+    +     "}catch(_){}"
+    +   "});"
+    + "}"
 
-  if(items.length===0){
-    alert('No cart items detected. Make sure you are on the shopping cart or product page.');
-    return;
-  }
-  // Cap at 25 to keep the URL short
-  if(items.length>25) items=items.slice(0,25);
-  try{
-    var payload=btoa(unescape(encodeURIComponent(JSON.stringify(items))));
-    window.open('${CLOSET_URL}#/wishlist?cartImport='+payload,'_blank');
-  }catch(e){
-    alert('Failed to encode cart: '+e.message);
-  }
-})();
-`.replace(/(^|\s)\/\/[^\n]*/g, '$1').replace(/\n\s*/g, '');
+    + "if(items.length===0){alert('No cart items detected. Make sure you are on the shopping cart or product page.');return;}"
+    + "if(items.length>25)items=items.slice(0,25);"
+    + "try{var payload=btoa(unescape(encodeURIComponent(JSON.stringify(items))));"
+    + "window.open('" + CLOSET_URL + "#/wishlist?cartImport='+payload,'_blank');}"
+    + "catch(e){alert('Failed to encode cart: '+e.message);}"
+    + "})();";
 
-  const BOOKMARKLET_HREF = 'javascript:' + encodeURIComponent(BOOKMARKLET_BODY);
+  var BOOKMARKLET_HREF = 'javascript:' + encodeURIComponent(BMK);
 
   async function render(main) {
     main = main || document.getElementById('main');
     if (!main) return;
+    main.innerHTML = ''
+      + '<div class="page-header">'
+      +   '<div class="page-title-group">'
+      +     '<h1>Cart Importer</h1>'
+      +     '<div class="page-subtitle">Bookmarklet · scan any cart, add to your wishlist</div>'
+      +   '</div>'
+      + '</div>'
 
-    main.innerHTML = `
-      <div class="page-header">
-        <div class="page-title-group">
-          <h1>Cart Importer</h1>
-          <div class="page-subtitle">Bookmarklet · scan any cart, add to your wishlist</div>
-        </div>
-      </div>
+      + '<div class="card" style="padding: 18px 22px; margin-bottom: 18px;">'
+      +   '<h2 style="margin: 0 0 10px; font-family: \'Playfair Display\', serif; font-size: 22px;">One-time setup (1 minute)</h2>'
+      +   '<ol style="font-size: 14px; line-height: 1.8; padding-left: 22px; margin: 0;">'
+      +     '<li><strong>Show your bookmarks bar</strong> if it\'s hidden — Chrome/Edge: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> (Mac: <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).</li>'
+      +     '<li><strong>Drag this button</strong> onto your bookmarks bar:'
+      +       '<div style="margin: 12px 0 4px;">'
+      +         '<a href="' + BOOKMARKLET_HREF + '" class="btn btn-primary" id="bookmarkletBtn" onclick="event.preventDefault(); alert(\'Don\\\'t click — DRAG this button to your bookmarks bar.\'); return false;" style="cursor: grab; padding: 10px 18px; font-size: 14px;">+ Add to Closet</a>'
+      +       '</div>'
+      +       '<div class="muted" style="font-size: 12px;">Drag — don\'t click. The button becomes a bookmark.</div>'
+      +     '</li>'
+      +     '<li><strong>Visit any cart or checkout page.</strong></li>'
+      +     '<li><strong>Click the "+ Add to Closet" bookmark</strong> in your bookmarks bar.</li>'
+      +     '<li>A new tab opens at your closet with the cart items pre-loaded into your wishlist for review.</li>'
+      +   '</ol>'
+      + '</div>'
 
-      <div class="card" style="padding: 18px 22px; margin-bottom: 18px;">
-        <h2 style="margin: 0 0 10px; font-family: 'Playfair Display', serif; font-size: 22px;">One-time setup (1 minute)</h2>
-        <ol style="font-size: 14px; line-height: 1.8; padding-left: 22px; margin: 0;">
-          <li><strong>Show your bookmarks bar</strong> if it's hidden — Chrome/Edge: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> (Mac: <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).</li>
-          <li><strong>Drag this button</strong> onto your bookmarks bar:
-            <div style="margin: 12px 0 4px;">
-              <a href="${BOOKMARKLET_HREF}" class="btn btn-primary" id="bookmarkletBtn" onclick="event.preventDefault(); alert('Don\\'t click — DRAG this button to your bookmarks bar.'); return false;" style="cursor: grab; padding: 10px 18px; font-size: 14px;">+ Add to Closet</a>
-            </div>
-            <div class="muted" style="font-size: 12px;">Drag — don't click. The button becomes a bookmark.</div>
-          </li>
-          <li><strong>Visit any cart or checkout page</strong> on a supported site (see below).</li>
-          <li><strong>Click the "+ Add to Closet" bookmark</strong> in your bookmarks bar.</li>
-          <li>A new tab opens at your closet with the cart items pre-loaded into your wishlist for review.</li>
-        </ol>
-      </div>
-
-      <div class="card" style="padding: 16px 20px; margin-bottom: 18px;">
-        <h3 style="margin: 0 0 8px; font-size: 15px;">Supported sites</h3>
-        <div class="muted" style="font-size: 13px; margin-bottom: 8px;">Best results on these — site-specific parsers are tuned for cart layouts.</div>
-        <div class="cart-import-sites">
-          <span class="cart-import-site">Lululemon</span>
-          <span class="cart-import-site">Vuori</span>
-          <span class="cart-import-site">Alo Yoga</span>
-          <span class="cart-import-site">Patagonia</span>
-          <span class="cart-import-site">REI</span>
-          <span class="cart-import-site">Athleta</span>
-          <span class="cart-import-site">American Eagle</span>
-          <span class="cart-import-site">Varley</span>
-        </div>
-        <div class="muted" style="font-size: 12px; margin-top: 10px;">Other sites work too if they publish standard product data (most major retailers do). If a site doesn't import cleanly, let me know and I'll add a parser for it.</div>
-      </div>
-      <div class="card" style="padding: 16px 20px;">
-        <h3 style="margin: 0 0 8px; font-size: 15px;">FAQ</h3>
-        <details style="margin-bottom: 8px;">
-          <summary style="cursor: pointer; font-size: 13px; font-weight: 500;">Is my data sent anywhere?</summary>
-          <div class="muted" style="font-size: 12px; padding: 6px 0 0 12px; line-height: 1.55;">No. The bookmarklet runs entirely in your browser. It opens a new tab on this site with the cart data in the URL. Nothing is sent to any third-party server.</div>
-        </details>
-        <details style="margin-bottom: 8px;">
-          <summary style="cursor: pointer; font-size: 13px; font-weight: 500;">Can my friends/family use this too?</summary>
-          <div class="muted" style="font-size: 12px; padding: 6px 0 0 12px; line-height: 1.55;">Yes — anyone using the closet app can come to this page and drag the bookmarklet into their own bookmarks bar. Each person's imports go into their own wishlist.</div>
-        </details>
-        <details>
-          <summary style="cursor: pointer; font-size: 13px; font-weight: 500;">A site I shop isn't on the list — what happens?</summary>
-          <div class="muted" style="font-size: 12px; padding: 6px 0 0 12px; line-height: 1.55;">The bookmarklet falls back to a generic DOM scraper that looks for cart-item-shaped elements with images and prices. If nothing is detected, it shows an alert. Let me know which site and I'll add a tuned parser.</div>
-        </details>
-      </div>
-    `;
+      + '<div class="card" style="padding: 16px 20px; margin-bottom: 18px;">'
+      +   '<h3 style="margin: 0 0 8px; font-size: 15px;">Supported sites</h3>'
+      +   '<div class="muted" style="font-size: 13px; margin-bottom: 8px;">Brand auto-detected on these. Other sites work via generic scrape.</div>'
+      +   '<div class="cart-import-sites">'
+      +     '<span class="cart-import-site">Lululemon</span>'
+      +     '<span class="cart-import-site">Vuori</span>'
+      +     '<span class="cart-import-site">Alo Yoga</span>'
+      +     '<span class="cart-import-site">Patagonia</span>'
+      +     '<span class="cart-import-site">REI</span>'
+      +     '<span class="cart-import-site">Athleta</span>'
+      +     '<span class="cart-import-site">American Eagle</span>'
+      +     '<span class="cart-import-site">Varley</span>'
+      +   '</div>'
+      + '</div>';
   }
 
   window.renderCartImportView = function(main) { return render(main); };
