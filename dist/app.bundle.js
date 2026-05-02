@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-02 02:14:13 */
+/* Virtual Closet bundle — built 2026-05-02 02:28:59 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -4929,6 +4929,12 @@ function wireLoginScreen() {
       }
       document.getElementById('loginPassword').value = '';
       hideLoginOverlay();
+      // If a cart import was stashed before signin, route to wishlist so it processes
+      try {
+        if (sessionStorage.getItem('vc:pendingCartImport') && !location.hash.startsWith('#/wishlist')) {
+          location.hash = '#/wishlist';
+        }
+      } catch (_) {}
       await router();
       await refreshSidebarCount();
       if (migrated) {
@@ -5031,7 +5037,6 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 // Mobile sidebar toggle (separate listener — no awaits needed here)
 window.addEventListener('DOMContentLoaded', () => {
-  const toggle = document.getElementById('sidebarToggle');
   const sidebar = document.querySelector('.sidebar');
   if (toggle && sidebar) {
     toggle.addEventListener('click', () => sidebar.classList.toggle('open'));
@@ -6314,10 +6319,36 @@ window.addEventListener('DOMContentLoaded', () => {
   async function _handleCartImportParam() {
     const hash = location.hash || '';
     const qIdx = hash.indexOf('?');
-    if (qIdx < 0) return;
-    const params = new URLSearchParams(hash.slice(qIdx + 1));
-    const enc = params.get('cartImport');
+    let enc = null;
+    let fromUrl = false;
+    if (qIdx >= 0) {
+      const params = new URLSearchParams(hash.slice(qIdx + 1));
+      enc = params.get('cartImport');
+      if (enc) fromUrl = true;
+    }
+    // Fall back to a stash from before signin
+    if (!enc) {
+      try { enc = sessionStorage.getItem('vc:pendingCartImport'); } catch (_) {}
+    }
     if (!enc) return;
+
+    // Not signed in yet? Stash and bail — we'll process after the user signs
+    // in. Prevents items from saving to the guest DB while the login
+    // overlay is still showing.
+    if (typeof getCurrentUser === 'function' && !getCurrentUser()) {
+      try { sessionStorage.setItem('vc:pendingCartImport', enc); } catch (_) {}
+      return;
+    }
+
+    // Strip from URL (or stash) so a refresh doesn't re-prompt
+    if (fromUrl) {
+      const params = new URLSearchParams(hash.slice(qIdx + 1));
+      params.delete('cartImport');
+      const newHash = params.toString() ? '#/wishlist?' + params.toString() : '#/wishlist';
+      history.replaceState(null, '', location.pathname + location.search + newHash);
+    }
+    try { sessionStorage.removeItem('vc:pendingCartImport'); } catch (_) {}
+
     let items;
     try {
       const json = decodeURIComponent(escape(atob(enc)));
@@ -6327,10 +6358,6 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (!Array.isArray(items) || items.length === 0) return;
-
-    params.delete('cartImport');
-    const newHash = params.toString() ? '#/wishlist?' + params.toString() : '#/wishlist';
-    history.replaceState(null, '', location.pathname + location.search + newHash);
 
     const ok = confirm(
       `Import ${items.length} item${items.length === 1 ? '' : 's'} from cart?\n\n` +
@@ -6359,31 +6386,28 @@ window.addEventListener('DOMContentLoaded', () => {
             const blob = await fetchImageBlob(it.imageUrl);
             if (typeof resizeImage === 'function') {
               wishItem.photo = await resizeImage(blob, 1200, 0.88);
-              wishItem.thumb = await makeThumbnail(blob, 800, 0.88);
             } else {
               wishItem.photo = blob;
             }
-          } catch (_) {}
+          } catch (imgErr) {
+            console.warn('cartImport image fetch failed:', it.imageUrl, imgErr);
+          }
         }
         await dbAddWishlistItem(wishItem);
         added++;
       } catch (e) {
-        console.warn('cartImport item add failed:', e, it);
+        console.warn('cartImport item save failed:', it && it.name, e);
       }
     }
-    if (typeof showToast === 'function') {
-      showToast(`Imported ${added} item${added === 1 ? '' : 's'} from cart`);
+
+    if (added > 0) {
+      try { showToast('Imported ' + added + ' item' + (added === 1 ? '' : 's') + ' to wishlist'); } catch (_) {}
+      try { await render(); } catch (_) {}
+    } else {
+      try { showToast('No items imported'); } catch (_) {}
     }
   }
 
-  window.renderWishlistView = function(main) { return render(main); };
-
-  function maybeRender() {
-    if (location.hash.startsWith('#/wishlist')) render(document.getElementById('main'));
-  }
-  window.addEventListener('hashchange', maybeRender);
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', maybeRender);
-  else maybeRender();
 })();
 
 
