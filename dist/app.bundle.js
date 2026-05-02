@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-02 02:39:48 */
+/* Virtual Closet bundle — built 2026-05-02 02:46:21 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -6429,6 +6429,19 @@ window.addEventListener('DOMContentLoaded', function () {
       try { showToast('No items imported'); } catch (_) {}
     }
   }
+
+
+  // Expose the render function so the router (in app-r10.js) can call it.
+  window.renderWishlistView = function (main) { return render(main); };
+
+  // Auto-render on hashchange and on initial load if we're on #/wishlist
+  function maybeRender() {
+    var h = location.hash || '';
+    if (h.indexOf('#/wishlist') === 0) {
+      try { render(document.getElementById('main')); } catch (_) {}
+    }
+  }
+  window.addEventListener('hashchange', maybeRender);
 
 })();
 
