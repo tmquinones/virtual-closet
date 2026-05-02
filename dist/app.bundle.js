@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-02 02:07:13 */
+/* Virtual Closet bundle — built 2026-05-02 02:14:13 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -9914,47 +9914,59 @@ function rotationDayHtml(day) {
 
 /* ===== js/cartimport-r1.js ===== */
 // cartimport-r1.js — Cart-import setup view at #/cart-import
-// Bookmarklet drag-and-drop. Click on any cart page to send items to wishlist.
+// Bookmarklet uses content-shape detection: finds leaf elements with both
+// an <img> and a $X.XX price, stops at "you might also like" heading.
 
 (function() {
   var CLOSET_URL = 'https://tmquinones.github.io/virtual-closet/';
 
-  // Bookmarklet body kept as one big string with single-quote concatenation
-  // (no template literal, no // comments) so it survives encoding cleanly.
   var BMK = ''
     + "(function(){"
-    + "function txt(el,sel){var n=el.querySelector(sel);return n?(n.textContent||'').trim():'';}"
-    + "function attr(el,sel,a){var n=el.querySelector(sel);return n?(n.getAttribute(a)||'').trim():'';}"
+    + "function txt(el,sels){if(!el)return '';for(var i=0;i<sels.length;i++){var n=el.querySelector(sels[i]);if(n){var t=(n.textContent||'').trim();if(t)return t;}}return '';}"
+    + "function attr(el,sel,a){var n=el&&el.querySelector(sel);return n?(n.getAttribute(a)||'').trim():'';}"
     + "function abs(u){if(!u)return '';try{return new URL(u,location.href).href;}catch(_){return u;}}"
     + "function priceOf(s){if(!s)return null;var m=String(s).replace(/[^\\d.,]/g,'').replace(/,/g,'');var n=parseFloat(m);return isNaN(n)?null:n;}"
     + "var host=location.hostname.toLowerCase();"
-    + "var items=[];"
-    + "function add(o){if(!o||!o.name)return;items.push({name:o.name,brand:o.brand||'',color:o.color||'',size:o.size||'',price:o.price==null?null:Number(o.price),url:abs(o.url||location.href),imageUrl:abs(o.imageUrl||'')});}"
-
     + "var siteBrand={lululemon:'Lululemon',vuori:'Vuori',aloyoga:'Alo Yoga',patagonia:'Patagonia','rei.com':'REI',athleta:'Athleta','ae.com':'American Eagle',americaneagle:'American Eagle',varley:'Varley'};"
     + "var brand='';for(var k in siteBrand){if(host.indexOf(k)>-1){brand=siteBrand[k];break;}}"
 
-    + "var sel='[class*=\"cart-item\"],[class*=\"line-item\"],[class*=\"LineItem\"],[class*=\"cart_item\"],[class*=\"basket-item\"],[class*=\"bag-item\"],[class*=\"cart-line\"],[data-testid*=\"cart-item\"],[class*=\"cart\"][class*=\"item\"]';"
-    + "var nodeSet=new Set();"
-    + "document.querySelectorAll(sel).forEach(function(el){"
-    +   "var p=el.parentElement;while(p){if(nodeSet.has(p))return;p=p.parentElement;}"
-    +   "var img=el.querySelector('img');"
-    +   "var priceText=(el.textContent||'').match(/\\$\\d[\\d,.]*/);"
-    +   "if(!img||!priceText)return;"
-    +   "nodeSet.add(el);"
-    +   "add({name:txt(el,'a,h2,h3,h4,[class*=\"title\"],[class*=\"name\"],[class*=\"product\"]'),brand:brand,color:txt(el,'[class*=\"color\"],[class*=\"variant\"],[class*=\"option\"]'),size:txt(el,'[class*=\"size\"]'),price:priceOf(priceText[0]),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});"
-    + "});"
+    + "var endNode=null;"
+    + "var allHs=document.querySelectorAll('h1,h2,h3,h4,p,div,section');"
+    + "for(var hi=0;hi<allHs.length;hi++){var ht=(allHs[hi].textContent||'').trim().toLowerCase();if(ht.length<80&&/you might also like|recommended for you|customers also|complete the look|frequently bought|you may also/.test(ht)){endNode=allHs[hi];break;}}"
 
-    + "if(items.length===0){"
-    +   "document.querySelectorAll('script[type=\"application/ld+json\"]').forEach(function(s){"
-    +     "try{var data=JSON.parse(s.textContent);var arr=Array.isArray(data)?data:[data];"
-    +     "arr.forEach(function(d){"
-    +       "if(d['@type']==='Product'){"
-    +         "var offers=d.offers&&(Array.isArray(d.offers)?d.offers[0]:d.offers);"
-    +         "add({name:d.name,brand:(d.brand&&(d.brand.name||d.brand))||brand,color:d.color,price:offers&&priceOf(offers.price),url:d.url||location.href,imageUrl:Array.isArray(d.image)?d.image[0]:d.image});"
-    +       "}"
-    +     "});"
-    +     "}catch(_){}"
+    + "function extractName(el){"
+    +   "var n=txt(el,['h1','h2','h3','h4','h5','a','[class*=\"title\"]','[class*=\"name\"]','[class*=\"product\"]']);"
+    +   "if(n)return n;"
+    +   "var nodes=el.querySelectorAll('span,div,p');"
+    +   "for(var i=0;i<nodes.length;i++){var t=(nodes[i].textContent||'').trim();if(t.length>3&&t.length<100&&!t.match(/^\\$/)&&!t.match(/^(XS|XXS|S|M|L|XL|XXL|XXXL|\\d+)$/i)&&!t.match(/^(color|size|qty|quantity|remove)/i)){return t;}}"
+    +   "return '';"
+    + "}"
+
+    + "var items=[];"
+    + "var nodeSet=new Set();"
+    + "var all=document.querySelectorAll('*');"
+    + "for(var i=0;i<all.length;i++){"
+    +   "var el=all[i];"
+    +   "if(endNode&&(endNode.compareDocumentPosition(el)&0x04))break;"
+    +   "var img=el.querySelector('img');"
+    +   "var pm=(el.textContent||'').match(/\\$\\d{1,4}(?:[,.]\\d{2,3})*\\.\\d{2}/);"
+    +   "if(!img||!pm)continue;"
+    +   "var hasNestedItem=false;"
+    +   "for(var c=0;c<el.children.length;c++){var ch=el.children[c];if(ch.querySelector('img')&&(ch.textContent||'').match(/\\$\\d{1,4}(?:[,.]\\d{2,3})*\\.\\d{2}/)){hasNestedItem=true;break;}}"
+    +   "if(hasNestedItem)continue;"
+    +   "var p=el.parentElement;var skip=false;while(p){if(nodeSet.has(p)){skip=true;break;}p=p.parentElement;}"
+    +   "if(skip)continue;"
+    +   "nodeSet.add(el);"
+    +   "var name=extractName(el);"
+    +   "if(!name)continue;"
+    +   "items.push({"
+    +     "name:name,"
+    +     "brand:brand,"
+    +     "color:txt(el,['[class*=\"color\"]','[class*=\"variant\"]','[class*=\"option\"]']),"
+    +     "size:txt(el,['[class*=\"size\"]']),"
+    +     "price:priceOf(pm[0]),"
+    +     "url:abs((el.querySelector('a')||{}).href||location.href),"
+    +     "imageUrl:abs(img.src||img.getAttribute('data-src')||'')"
     +   "});"
     + "}"
 
@@ -9977,36 +9989,21 @@ function rotationDayHtml(day) {
       +     '<div class="page-subtitle">Bookmarklet · scan any cart, add to your wishlist</div>'
       +   '</div>'
       + '</div>'
-
       + '<div class="card" style="padding: 18px 22px; margin-bottom: 18px;">'
       +   '<h2 style="margin: 0 0 10px; font-family: \'Playfair Display\', serif; font-size: 22px;">One-time setup (1 minute)</h2>'
       +   '<ol style="font-size: 14px; line-height: 1.8; padding-left: 22px; margin: 0;">'
-      +     '<li><strong>Show your bookmarks bar</strong> if it\'s hidden — Chrome/Edge: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> (Mac: <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).</li>'
-      +     '<li><strong>Drag this button</strong> onto your bookmarks bar:'
+      +     '<li><strong>Show your bookmarks bar</strong> — Chrome/Edge: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> (Mac: <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).</li>'
+      +     '<li><strong>Drag</strong> this button onto your bookmarks bar (don\'t click — drag):'
       +       '<div style="margin: 12px 0 4px;">'
       +         '<a href="' + BOOKMARKLET_HREF + '" class="btn btn-primary" id="bookmarkletBtn" onclick="event.preventDefault(); alert(\'Don\\\'t click — DRAG this button to your bookmarks bar.\'); return false;" style="cursor: grab; padding: 10px 18px; font-size: 14px;">+ Add to Closet</a>'
       +       '</div>'
-      +       '<div class="muted" style="font-size: 12px;">Drag — don\'t click. The button becomes a bookmark.</div>'
       +     '</li>'
-      +     '<li><strong>Visit any cart or checkout page.</strong></li>'
-      +     '<li><strong>Click the "+ Add to Closet" bookmark</strong> in your bookmarks bar.</li>'
-      +     '<li>A new tab opens at your closet with the cart items pre-loaded into your wishlist for review.</li>'
+      +     '<li>Visit any cart/checkout page → click the bookmark → items land in your wishlist.</li>'
       +   '</ol>'
       + '</div>'
-
-      + '<div class="card" style="padding: 16px 20px; margin-bottom: 18px;">'
-      +   '<h3 style="margin: 0 0 8px; font-size: 15px;">Supported sites</h3>'
-      +   '<div class="muted" style="font-size: 13px; margin-bottom: 8px;">Brand auto-detected on these. Other sites work via generic scrape.</div>'
-      +   '<div class="cart-import-sites">'
-      +     '<span class="cart-import-site">Lululemon</span>'
-      +     '<span class="cart-import-site">Vuori</span>'
-      +     '<span class="cart-import-site">Alo Yoga</span>'
-      +     '<span class="cart-import-site">Patagonia</span>'
-      +     '<span class="cart-import-site">REI</span>'
-      +     '<span class="cart-import-site">Athleta</span>'
-      +     '<span class="cart-import-site">American Eagle</span>'
-      +     '<span class="cart-import-site">Varley</span>'
-      +   '</div>'
+      + '<div class="card" style="padding: 16px 20px;">'
+      +   '<h3 style="margin: 0 0 8px; font-size: 15px;">How it works</h3>'
+      +   '<div class="muted" style="font-size: 13px; line-height: 1.55;">The bookmarklet searches the cart page for elements that contain both a product image AND a $XX.XX price. It stops at headings like "You might also like" so recommendations don\'t pollute your import. Brand is auto-detected on Lululemon, Vuori, Alo Yoga, Patagonia, REI, Athleta, American Eagle, and Varley.</div>'
       + '</div>';
   }
 
