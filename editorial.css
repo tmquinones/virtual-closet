@@ -2958,3 +2958,32 @@ body.theme-dark .flatlay-thumb {
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
+
+/* ==================================================================
+   Cart Importer (Phase 33) — bookmarklet setup page
+   ================================================================== */
+.cart-import-sites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cart-import-site {
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  vertical-align: 1px;
+}

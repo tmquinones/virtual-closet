@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-05-01 21:36:14 */
-/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
+/* Virtual Closet bundle — built 2026-05-02 00:15:28 */
+/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -4751,7 +4751,7 @@ function _renderTile(group) {
 /* ===== js/app-r10.js ===== */
 // app.js — main router and app glue
 
-const ROUTES = ['browse', 'closet', 'add', 'outfits', 'build', 'recover', 'audit', 'insights', 'wishlist', 'girlmath', 'trip', 'compare', 'capsule', 'returned', 'daily', 'slideshow', 'notes', 'receipts', 'returns-due', 'shop', 'top10'];
+const ROUTES = ['browse', 'closet', 'add', 'outfits', 'build', 'recover', 'audit', 'insights', 'wishlist', 'girlmath', 'trip', 'compare', 'capsule', 'returned', 'daily', 'slideshow', 'notes', 'receipts', 'returns-due', 'shop', 'top10', 'cart-import'];
 
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
@@ -4793,6 +4793,7 @@ async function router() {
     case 'returns-due': if (typeof window.renderReturnsDueView === 'function') await window.renderReturnsDueView(main); break;
     case 'shop':     if (typeof window.renderShopView === 'function') await window.renderShopView(main); break;
     case 'top10':    if (typeof window.renderTop10View === 'function') await window.renderTop10View(main); break;
+    case 'cart-import': if (typeof window.renderCartImportView === 'function') await window.renderCartImportView(main); break;
     default:        await renderClosetView(main, params, true);
   }
 }
@@ -6025,6 +6026,9 @@ window.addEventListener('DOMContentLoaded', () => {
     pendingPhoto = null;
     pendingPhoto2 = null;
 
+    // Handle ?cartImport=base64 from the cart-import bookmarklet
+    await _handleCartImportParam();
+
     const items = (await dbGetAllWishlistItems()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     main.innerHTML = `
@@ -6306,17 +6310,80 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ===== Cart-import handler =====
+  async function _handleCartImportParam() {
+    const hash = location.hash || '';
+    const qIdx = hash.indexOf('?');
+    if (qIdx < 0) return;
+    const params = new URLSearchParams(hash.slice(qIdx + 1));
+    const enc = params.get('cartImport');
+    if (!enc) return;
+    let items;
+    try {
+      const json = decodeURIComponent(escape(atob(enc)));
+      items = JSON.parse(json);
+    } catch (e) {
+      console.warn('cartImport decode failed:', e);
+      return;
+    }
+    if (!Array.isArray(items) || items.length === 0) return;
+
+    params.delete('cartImport');
+    const newHash = params.toString() ? '#/wishlist?' + params.toString() : '#/wishlist';
+    history.replaceState(null, '', location.pathname + location.search + newHash);
+
+    const ok = confirm(
+      `Import ${items.length} item${items.length === 1 ? '' : 's'} from cart?\n\n` +
+      items.slice(0, 5).map(i => `• ${i.brand ? i.brand + ' — ' : ''}${i.name}`).join('\n') +
+      (items.length > 5 ? `\n...and ${items.length - 5} more` : '')
+    );
+    if (!ok) return;
+
+    let added = 0;
+    for (const it of items) {
+      if (!it || !it.name) continue;
+      try {
+        const wishItem = {
+          name: String(it.name).slice(0, 200),
+          brand: String(it.brand || '').slice(0, 100),
+          color: String(it.color || '').slice(0, 100),
+          size: String(it.size || '').slice(0, 50),
+          targetPrice: (it.price && Number.isFinite(Number(it.price))) ? Number(it.price) : null,
+          url: String(it.url || '').slice(0, 500),
+          notes: '',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        if (it.imageUrl && typeof fetchImageBlob === 'function') {
+          try {
+            const blob = await fetchImageBlob(it.imageUrl);
+            if (typeof resizeImage === 'function') {
+              wishItem.photo = await resizeImage(blob, 1200, 0.88);
+              wishItem.thumb = await makeThumbnail(blob, 800, 0.88);
+            } else {
+              wishItem.photo = blob;
+            }
+          } catch (_) {}
+        }
+        await dbAddWishlistItem(wishItem);
+        added++;
+      } catch (e) {
+        console.warn('cartImport item add failed:', e, it);
+      }
+    }
+    if (typeof showToast === 'function') {
+      showToast(`Imported ${added} item${added === 1 ? '' : 's'} from cart`);
+    }
+  }
+
   window.renderWishlistView = function(main) { return render(main); };
 
   function maybeRender() {
-    if (location.hash === '#/wishlist') render(document.getElementById('main'));
+    if (location.hash.startsWith('#/wishlist')) render(document.getElementById('main'));
   }
   window.addEventListener('hashchange', maybeRender);
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', maybeRender);
-  } else {
-    maybeRender();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', maybeRender);
+  else maybeRender();
 })();
 
 
@@ -9838,6 +9905,171 @@ function rotationDayHtml(day) {
 
   function maybeRender() {
     if (location.hash === '#/top10') render(document.getElementById('main'));
+  }
+  window.addEventListener('hashchange', maybeRender);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', maybeRender);
+  else maybeRender();
+})();
+
+
+/* ===== js/cartimport-r1.js ===== */
+// cartimport-r1.js — Cart-import setup view at #/cart-import
+//
+// Generates a one-click bookmarklet the user drags to their browser bookmarks
+// bar. When clicked on any cart page, the bookmarklet scrapes product items
+// (using site-specific selectors for the brands we know, JSON-LD fallback
+// for the rest) and opens the user's closet at /#/wishlist?cartImport=...
+// with a base64-encoded JSON payload. The wishlist view decodes and offers
+// to import.
+
+(function() {
+  // The closet's destination URL — this is where the bookmarklet sends its
+  // payload. Hard-coded for the github.io deploy; could be overridden when
+  // self-hosting.
+  const CLOSET_URL = 'https://tmquinones.github.io/virtual-closet/';
+
+  // The actual bookmarklet code, as a single-line string.
+  // Site-specific scrapers + JSON-LD fallback. Cap at 25 items per click.
+  // Keep this lean — bookmarklets have a ~5–8KB URL limit in many browsers.
+  const BOOKMARKLET_BODY = `
+(function(){
+  function txt(el,sel){var n=el.querySelector(sel);return n?(n.textContent||'').trim():'';}
+  function attr(el,sel,a){var n=el.querySelector(sel);return n?(n.getAttribute(a)||'').trim():'';}
+  function abs(u){if(!u)return '';try{return new URL(u,location.href).href;}catch(_){return u;}}
+  function priceOf(s){if(!s)return null;var m=String(s).replace(/[^\\d.,]/g,'').replace(/,/g,'');var n=parseFloat(m);return isNaN(n)?null:n;}
+  var host=location.hostname.toLowerCase();
+  var items=[];
+  function add(o){if(!o||!o.name)return;items.push({name:o.name,brand:o.brand||'',color:o.color||'',size:o.size||'',price:o.price==null?null:Number(o.price),url:abs(o.url||location.href),imageUrl:abs(o.imageUrl||'')});}
+
+  // ---- Site-specific selectors ----
+  if(host.indexOf('lululemon')>-1){
+    document.querySelectorAll('[data-testid*="cart"]:is(article,div,li,[role="listitem"])').forEach(function(el){
+      add({name:txt(el,'[data-testid*="title"],h3,h4,a'),brand:'Lululemon',color:txt(el,'[data-testid*="color"]'),size:txt(el,'[data-testid*="size"]'),price:priceOf(txt(el,'[data-testid*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
+    });
+  } else if(host.indexOf('vuoriclothing')>-1){
+    document.querySelectorAll('[class*="cart-item"],[class*="LineItem"],[data-testid*="cart-item"]').forEach(function(el){
+      add({name:txt(el,'h3,h4,a,[class*="title"]'),brand:'Vuori',color:txt(el,'[class*="color"],[class*="variant"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
+    });
+  } else if(host.indexOf('aloyoga')>-1 || host.indexOf('alo')===0){
+    document.querySelectorAll('[class*="cart-item"],[class*="line-item"]').forEach(function(el){
+      add({name:txt(el,'a,h3,h4'),brand:'Alo Yoga',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
+    });
+  } else if(host.indexOf('patagonia')>-1){
+    document.querySelectorAll('[class*="cart"][class*="item"],[data-test*="cart-line"]').forEach(function(el){
+      add({name:txt(el,'a,h3,h4,[class*="name"]'),brand:'Patagonia',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
+    });
+  } else if(host.indexOf('rei.com')>-1){
+    document.querySelectorAll('[class*="cart"][class*="item"],[data-ui*="cart-line"]').forEach(function(el){
+      add({name:txt(el,'a,[class*="title"]'),brand:'REI',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
+    });
+  } else if(host.indexOf('athleta')>-1){
+    document.querySelectorAll('[class*="cart-item"],[class*="line-item"]').forEach(function(el){
+      add({name:txt(el,'a,h3,[class*="name"]'),brand:'Athleta',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
+    });
+  } else if(host.indexOf('ae.com')>-1 || host.indexOf('americaneagle')>-1){
+    document.querySelectorAll('[class*="cart-item"],[class*="basket-item"]').forEach(function(el){
+      add({name:txt(el,'a,h3,[class*="name"]'),brand:'American Eagle',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
+    });
+  }
+
+  // ---- JSON-LD fallback (works on most modern e-commerce sites) ----
+  if(items.length===0){
+    document.querySelectorAll('script[type="application/ld+json"]').forEach(function(s){
+      try{
+        var data=JSON.parse(s.textContent);
+        var arr=Array.isArray(data)?data:[data];
+        arr.forEach(function(d){
+          if(d['@type']==='Product'){
+            var offers=d.offers&&(Array.isArray(d.offers)?d.offers[0]:d.offers);
+            add({name:d.name,brand:(d.brand&&(d.brand.name||d.brand))||'',color:d.color,price:offers&&priceOf(offers.price),url:d.url||location.href,imageUrl:Array.isArray(d.image)?d.image[0]:d.image});
+          }
+        });
+      }catch(_){}
+    });
+  }
+
+  if(items.length===0){
+    alert('No cart items detected. Make sure you are on the shopping cart or product page.');
+    return;
+  }
+  // Cap at 25 to keep the URL short
+  if(items.length>25) items=items.slice(0,25);
+  try{
+    var payload=btoa(unescape(encodeURIComponent(JSON.stringify(items))));
+    window.open('${CLOSET_URL}#/wishlist?cartImport='+payload,'_blank');
+  }catch(e){
+    alert('Failed to encode cart: '+e.message);
+  }
+})();
+`.replace(/\n\s*/g, '');
+
+  const BOOKMARKLET_HREF = 'javascript:' + encodeURIComponent(BOOKMARKLET_BODY);
+
+  async function render(main) {
+    main = main || document.getElementById('main');
+    if (!main) return;
+
+    main.innerHTML = `
+      <div class="page-header">
+        <div class="page-title-group">
+          <h1>Cart Importer</h1>
+          <div class="page-subtitle">Bookmarklet · scan any cart, add to your wishlist</div>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 18px 22px; margin-bottom: 18px;">
+        <h2 style="margin: 0 0 10px; font-family: 'Playfair Display', serif; font-size: 22px;">One-time setup (1 minute)</h2>
+        <ol style="font-size: 14px; line-height: 1.8; padding-left: 22px; margin: 0;">
+          <li><strong>Show your bookmarks bar</strong> if it's hidden — Chrome/Edge: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> (Mac: <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).</li>
+          <li><strong>Drag this button</strong> onto your bookmarks bar:
+            <div style="margin: 12px 0 4px;">
+              <a href="${BOOKMARKLET_HREF}" class="btn btn-primary" id="bookmarkletBtn" onclick="event.preventDefault(); alert('Don\\'t click — DRAG this button to your bookmarks bar.'); return false;" style="cursor: grab; padding: 10px 18px; font-size: 14px;">+ Add to Closet</a>
+            </div>
+            <div class="muted" style="font-size: 12px;">Drag — don't click. The button becomes a bookmark.</div>
+          </li>
+          <li><strong>Visit any cart or checkout page</strong> on a supported site (see below).</li>
+          <li><strong>Click the "+ Add to Closet" bookmark</strong> in your bookmarks bar.</li>
+          <li>A new tab opens at your closet with the cart items pre-loaded into your wishlist for review.</li>
+        </ol>
+      </div>
+
+      <div class="card" style="padding: 16px 20px; margin-bottom: 18px;">
+        <h3 style="margin: 0 0 8px; font-size: 15px;">Supported sites</h3>
+        <div class="muted" style="font-size: 13px; margin-bottom: 8px;">Best results on these — site-specific parsers are tuned for cart layouts.</div>
+        <div class="cart-import-sites">
+          <span class="cart-import-site">Lululemon</span>
+          <span class="cart-import-site">Vuori</span>
+          <span class="cart-import-site">Alo Yoga</span>
+          <span class="cart-import-site">Patagonia</span>
+          <span class="cart-import-site">REI</span>
+          <span class="cart-import-site">Athleta</span>
+          <span class="cart-import-site">American Eagle</span>
+        </div>
+        <div class="muted" style="font-size: 12px; margin-top: 10px;">Other sites work too if they publish standard product data (most major retailers do). If a site doesn't import cleanly, let me know and I'll add a parser for it.</div>
+      </div>
+
+      <div class="card" style="padding: 16px 20px;">
+        <h3 style="margin: 0 0 8px; font-size: 15px;">FAQ</h3>
+        <details style="margin-bottom: 8px;">
+          <summary style="cursor: pointer; font-size: 13px; font-weight: 500;">Is my data sent anywhere?</summary>
+          <div class="muted" style="font-size: 12px; padding: 6px 0 0 12px; line-height: 1.55;">No. The bookmarklet runs entirely in your browser. It opens a new tab on this site with the cart data in the URL. Nothing is sent to any third-party server.</div>
+        </details>
+        <details style="margin-bottom: 8px;">
+          <summary style="cursor: pointer; font-size: 13px; font-weight: 500;">Can my friends/family use this too?</summary>
+          <div class="muted" style="font-size: 12px; padding: 6px 0 0 12px; line-height: 1.55;">Yes — anyone using the closet app can come to this page and drag the bookmarklet into their own bookmarks bar. Each person's imports go into their own wishlist.</div>
+        </details>
+        <details>
+          <summary style="cursor: pointer; font-size: 13px; font-weight: 500;">A site I shop isn't on the list — what happens?</summary>
+          <div class="muted" style="font-size: 12px; padding: 6px 0 0 12px; line-height: 1.55;">The bookmarklet falls back to a generic JSON-LD parser, which works on most major retailers. If it pulls nothing, the bookmarklet shows an alert. Let me know which site and I'll add a specific parser.</div>
+        </details>
+      </div>
+    `;
+  }
+
+  window.renderCartImportView = function(main) { return render(main); };
+
+  function maybeRender() {
+    if (location.hash === '#/cart-import') render(document.getElementById('main'));
   }
   window.addEventListener('hashchange', maybeRender);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', maybeRender);
