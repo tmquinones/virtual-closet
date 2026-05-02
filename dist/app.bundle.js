@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-01 20:09:01 */
+/* Virtual Closet bundle — built 2026-05-01 21:36:14 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -8940,20 +8940,30 @@ function rotationDayHtml(day) {
     const url = day.photo ? blobToUrl(day.photo) : '';
     const ids = [...day.itemIds];
     const previewItems = ids.slice(0, 4).map(id => itemMap.get(id)).filter(Boolean);
-    const tinyThumbs = previewItems.map(it => {
-      const u = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
-      return `<div class="slide-tiny-thumb" style="background-image:url('${u}')"></div>`;
-    }).join('');
     const dateLabel = fmtDay(day.date) || 'Undated';
+
+    // Cover: real day-photo if uploaded, otherwise a collage of item thumbs
+    let coverHtml;
+    if (url) {
+      coverHtml = `<div class="slide-cover" style="background-image: url('${url}');"></div>`;
+    } else if (previewItems.length > 0) {
+      const cells = previewItems.map(it => {
+        const u = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
+        return `<div class="slide-cover-cell" style="background-image:url('${u}')"></div>`;
+      }).join('');
+      const moreBadge = ids.length > 4 ? `<div class="slide-cover-more">+${ids.length - 4}</div>` : '';
+      coverHtml = `<div class="slide-cover slide-cover-collage slide-cover-${previewItems.length}">${cells}${moreBadge}</div>`;
+    } else {
+      coverHtml = `<div class="slide-cover slide-cover-empty"><div class="slide-no-photo">No items</div></div>`;
+    }
+
     return `
       <div class="slide-card" data-slide-day="${escapeHtml(day.date)}">
-        <div class="slide-cover" style="background-image: url('${url}'); background-color: var(--surface-2);">
-          ${url ? '' : `<div class="slide-no-photo">${ids.length} piece${ids.length === 1 ? '' : 's'}</div>`}
-        </div>
+        ${coverHtml}
         <div class="slide-info">
           <div class="slide-date">${escapeHtml(dateLabel)}</div>
           ${day.caption ? `<div class="slide-caption">${escapeHtml(day.caption)}</div>` : ''}
-          <div class="slide-thumbs">${tinyThumbs}${ids.length > 4 ? `<div class="slide-tiny-more">+${ids.length - 4}</div>` : ''}</div>
+          <div class="slide-piece-count muted">${ids.length} piece${ids.length === 1 ? '' : 's'}</div>
         </div>
       </div>
     `;
@@ -9001,6 +9011,7 @@ function rotationDayHtml(day) {
   else maybeRender();
 })();
 
+ 
 
 /* ===== js/notes-r1.js ===== */
 // notes-r1.js — Personal updates / features-to-add board at #/notes
