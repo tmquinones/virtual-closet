@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-02 02:28:59 */
+/* Virtual Closet bundle — built 2026-05-02 02:35:49 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -6031,8 +6031,27 @@ window.addEventListener('DOMContentLoaded', () => {
     pendingPhoto = null;
     pendingPhoto2 = null;
 
-    // Handle ?cartImport=base64 from the cart-import bookmarklet
-    await _handleCartImportParam();
+    // Handle ?cartImport=base64 from the cart-import bookmarklet.
+    // Wrapped — a malformed payload must never blank the wishlist page.
+    try {
+      await _handleCartImportParam();
+    } catch (e) {
+      console.error('cartImport handler crashed:', e);
+      try {
+        // Strip the bad param so a refresh isn't stuck on the same crash
+        const h = location.hash || '';
+        const qi = h.indexOf('?');
+        if (qi >= 0) {
+          const ps = new URLSearchParams(h.slice(qi + 1));
+          if (ps.has('cartImport')) {
+            ps.delete('cartImport');
+            const newHash = ps.toString() ? '#/wishlist?' + ps.toString() : '#/wishlist';
+            history.replaceState(null, '', location.pathname + location.search + newHash);
+          }
+        }
+        sessionStorage.removeItem('vc:pendingCartImport');
+      } catch (_) {}
+    }
 
     const items = (await dbGetAllWishlistItems()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
