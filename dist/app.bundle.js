@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-02 00:15:28 */
+/* Virtual Closet bundle — built 2026-05-02 01:41:06 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -9970,9 +9970,31 @@ function rotationDayHtml(day) {
     document.querySelectorAll('[class*="cart-item"],[class*="basket-item"]').forEach(function(el){
       add({name:txt(el,'a,h3,[class*="name"]'),brand:'American Eagle',color:txt(el,'[class*="color"]'),size:txt(el,'[class*="size"]'),price:priceOf(txt(el,'[class*="price"]')),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
     });
+  } else if(host.indexOf('varley')>-1){
+    document.querySelectorAll('[class*="cart-item"],[class*="line-item"],[class*="LineItem"],[class*="cart_item"]').forEach(function(el){
+      var img=el.querySelector('img'); var priceText=(el.textContent||'').match(/\\$\\d[\\d,.]*/);
+      if(!img||!priceText) return;
+      add({name:txt(el,'a,h2,h3,h4,[class*="title"],[class*="name"],[class*="product"]'),brand:'Varley',color:txt(el,'[class*="color"],[class*="variant"],[class*="option"]'),size:txt(el,'[class*="size"]'),price:priceOf(priceText[0]),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
+    });
   }
 
-  // ---- JSON-LD fallback (works on most modern e-commerce sites) ----
+  // ---- Generic DOM scrape (any site) — runs if site-specific found nothing.
+  // Looks for elements with cart/line-item-ish class names that contain BOTH
+  // an <img> and a $-formatted price. Filters out container divs.
+  if(items.length===0){
+    var nodeSet=new Set();
+    document.querySelectorAll('[class*="cart-item"],[class*="line-item"],[class*="LineItem"],[class*="cart_item"],[class*="basket-item"],[class*="bag-item"],[class*="cart-line"],[data-testid*="cart-item"]').forEach(function(el){
+      // Skip if a parent already qualified (avoid double-counting nested)
+      var p=el.parentElement; while(p){if(nodeSet.has(p))return;p=p.parentElement;}
+      var img=el.querySelector('img');
+      var priceText=(el.textContent||'').match(/\\$\\d[\\d,.]*/);
+      if(!img||!priceText) return;
+      nodeSet.add(el);
+      add({name:txt(el,'a,h2,h3,h4,[class*="title"],[class*="name"],[class*="product"]'),brand:'',color:txt(el,'[class*="color"],[class*="variant"],[class*="option"]'),size:txt(el,'[class*="size"]'),price:priceOf(priceText[0]),url:attr(el,'a','href'),imageUrl:attr(el,'img','src')});
+    });
+  }
+
+  // ---- JSON-LD final fallback (works on product pages mostly) ----
   if(items.length===0){
     document.querySelectorAll('script[type="application/ld+json"]').forEach(function(s){
       try{
@@ -10044,10 +10066,10 @@ function rotationDayHtml(day) {
           <span class="cart-import-site">REI</span>
           <span class="cart-import-site">Athleta</span>
           <span class="cart-import-site">American Eagle</span>
+          <span class="cart-import-site">Varley</span>
         </div>
         <div class="muted" style="font-size: 12px; margin-top: 10px;">Other sites work too if they publish standard product data (most major retailers do). If a site doesn't import cleanly, let me know and I'll add a parser for it.</div>
       </div>
-
       <div class="card" style="padding: 16px 20px;">
         <h3 style="margin: 0 0 8px; font-size: 15px;">FAQ</h3>
         <details style="margin-bottom: 8px;">
@@ -10060,7 +10082,7 @@ function rotationDayHtml(day) {
         </details>
         <details>
           <summary style="cursor: pointer; font-size: 13px; font-weight: 500;">A site I shop isn't on the list — what happens?</summary>
-          <div class="muted" style="font-size: 12px; padding: 6px 0 0 12px; line-height: 1.55;">The bookmarklet falls back to a generic JSON-LD parser, which works on most major retailers. If it pulls nothing, the bookmarklet shows an alert. Let me know which site and I'll add a specific parser.</div>
+          <div class="muted" style="font-size: 12px; padding: 6px 0 0 12px; line-height: 1.55;">The bookmarklet falls back to a generic DOM scraper that looks for cart-item-shaped elements with images and prices. If nothing is detected, it shows an alert. Let me know which site and I'll add a tuned parser.</div>
         </details>
       </div>
     `;
