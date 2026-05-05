@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-05 01:53:54 */
+/* Virtual Closet bundle — built 2026-05-05 13:16:35 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -1276,6 +1276,61 @@ const closetState = {
   sort: 'purchase-newest'
 };
 
+// Lightweight subtype keyword table for inferring garmentType + subtype on
+// items coming in via the email order importer. Mirrors the larger table in
+// js/wishlist-r6.js but is local-scope so closet-r10.js doesn't depend on
+// wishlist load order. The `_inferOrderCategory(text)` helper returns
+// [garmentType, subtype] or ['', ''] when nothing matches.
+const _ORDER_IMPORT_KEYWORDS = [
+  [/\bsports[- ]?bra\b|\bbralette\b/i, 'intimates_swim', 'Sports bra'],
+  [/\bbra\b/i,                          'intimates_swim', 'Bra'],
+  [/\bbikini[- ]?top\b/i,               'intimates_swim', 'Bikini top'],
+  [/\bbikini[- ]?bottom\b/i,            'intimates_swim', 'Bikini bottom'],
+  [/\bswim(suit)?\b|\bone[- ]?piece\b/i,'intimates_swim', 'One-piece swimsuit'],
+  [/\bunderwear\b|\bbrief\b|\bthong\b/i,'intimates_swim', 'Underwear'],
+  [/\bhalf[- ]?zip\b/i,                 'tops',           'Sweater'],
+  [/\bhoodie\b/i,                       'tops',           'Hoodie'],
+  [/\bcardigan\b/i,                     'tops',           'Cardigan'],
+  [/\bsweater\b|\bjumper\b/i,           'tops',           'Sweater'],
+  [/\bblouse\b/i,                       'tops',           'Blouse'],
+  [/\bbutton[- ]?up\b|\bshirt\b/i,      'tops',           'Shirt'],
+  [/\btank\b/i,                         'tops',           'Tank top'],
+  [/\blong[- ]?sleeve\b/i,              'tops',           'Long sleeve'],
+  [/\bt[- ]?shirt\b|\btee\b/i,          'tops',           'T-shirt'],
+  [/\bpolo\b/i,                         'tops',           'Polo'],
+  [/\bjeans\b/i,                        'bottoms',        'Jeans'],
+  [/\bleggings?\b/i,                    'bottoms',        'Leggings'],
+  [/\bshorts?\b/i,                      'bottoms',        'Shorts'],
+  [/\bpants?\b|\bjogger\b|\btrouser/i,  'bottoms',        'Pants'],
+  [/\bskirt\b/i,                        'bottoms',        'Skirt'],
+  [/\bdress\b/i,                        'dresses',        'Dress'],
+  [/\bjumpsuit\b/i,                     'dresses',        'Jumpsuit'],
+  [/\bromper\b/i,                       'dresses',        'Romper'],
+  [/\bblazer\b/i,                       'outerwear',      'Blazer'],
+  [/\bjacket\b/i,                       'outerwear',      'Jacket'],
+  [/\bcoat\b|\bparka\b/i,               'outerwear',      'Coat'],
+  [/\bvest\b/i,                         'outerwear',      'Vest'],
+  [/\bsneaker(s)?\b|\btrainer/i,        'shoes',          'Sneakers'],
+  [/\bheels?\b/i,                       'shoes',          'Heels'],
+  [/\bflats?\b|\bloafers?\b/i,          'shoes',          'Flats'],
+  [/\bboots?\b/i,                       'shoes',          'Boots'],
+  [/\bsandals?\b/i,                     'shoes',          'Sandals'],
+  [/\bhat\b|\bcap\b/i,                  'accessories',    'Hat'],
+  [/\bbelt\b/i,                         'accessories',    'Belt'],
+  [/\bbag\b|\bpurse\b|\btote\b/i,       'accessories',    'Bag'],
+  [/\bsunglasses\b/i,                   'accessories',    'Sunglasses'],
+  [/\bwatch\b/i,                        'accessories',    'Watch'],
+  [/\bscarf\b/i,                        'accessories',    'Scarf'],
+  [/\bsocks?\b/i,                       'accessories',    'Socks'],
+];
+function _inferOrderCategory(text) {
+  if (!text) return ['', ''];
+  for (const [pat, gt, st] of _ORDER_IMPORT_KEYWORDS) {
+    if (pat.test(text)) return [gt, st];
+  }
+  return ['', ''];
+}
+
 // Handles ?orderImport=BASE64 from the email-import bookmarklet. Reads the
 // param (or a sessionStorage stash from before signin), confirms with the
 // user, then fans out into dbAddItem for each item with the photo fetched
@@ -1335,6 +1390,9 @@ async function _handleOrderImportParam(params) {
   for (const it of items) {
     if (!it || !it.name) continue;
     try {
+      // Infer garment category + subtype from the item name so the closet
+      // doesn't show "Category: undefined" on every imported piece.
+      const [inferredGT, inferredST] = _inferOrderCategory(String(it.name || ''));
       const closetItem = {
         name: String(it.name).slice(0, 200),
         brand: String(it.brand || '').slice(0, 100),
@@ -1344,6 +1402,8 @@ async function _handleOrderImportParam(params) {
         purchaseDate: today,
         url: String(it.url || '').slice(0, 500),
         notes: '',
+        garmentType: inferredGT || '',
+        subtype: inferredST || '',
       };
       if (it.imageUrl && typeof fetchImageBlob === 'function') {
         try {
@@ -10209,9 +10269,18 @@ function rotationDayHtml(day) {
     + "var siteBrand={lululemon:'Lululemon',vuori:'Vuori',aloyoga:'Alo Yoga',patagonia:'Patagonia','rei.com':'REI',athleta:'Athleta','ae.com':'American Eagle',americaneagle:'American Eagle',varley:'Varley'};"
     + "var brand='';for(var k in siteBrand){if(host.indexOf(k)>-1){brand=siteBrand[k];break;}}"
 
+    // Find a heading that marks the start of a recommendation/upsell
+    // section, then stop scanning past it. Expanded list (v35) — Alo and
+    // others use phrases that aren't in the original list.
     + "var endNode=null;"
     + "var allHs=document.querySelectorAll('h1,h2,h3,h4,p,div,section');"
-    + "for(var hi=0;hi<allHs.length;hi++){var ht=(allHs[hi].textContent||'').trim().toLowerCase();if(ht.length<80&&/you might also like|recommended for you|customers also|complete the look|frequently bought|you may also/.test(ht)){endNode=allHs[hi];break;}}"
+    + "var endRe=/you might also like|you may also like|you may like|you might like|recommended for you|recommended|customers also|complete the look|complete your|complete your set|frequently bought|pair (it )?with|style (it )?with|shop the look|more from|wear it with|goes with|pairs well/;"
+    + "for(var hi=0;hi<allHs.length;hi++){var ht=(allHs[hi].textContent||'').trim().toLowerCase();if(ht.length<80&&endRe.test(ht)){endNode=allHs[hi];break;}}"
+
+    // Phrases that mark a non-product widget (payment buttons, chat
+    // widgets, promo banners). If an element matched as image+price
+    // contains any of these, skip — it's almost certainly not a cart row.
+    + "var widgetRe=/apple pay|google pay|paypal|klarna|afterpay|affirm|sezzle|pay (with|in)|sam'?s club|powered by|chat (with|now)|customer (service|care)|need help|message us|live chat|gift card|sign up|subscribe|newsletter/;"
 
     + "function extractName(el){"
     +   "var n=txt(el,['h1','h2','h3','h4','h5','a','[class*=\"title\"]','[class*=\"name\"]','[class*=\"product\"]']);"
@@ -10230,6 +10299,13 @@ function rotationDayHtml(day) {
     +   "var img=el.querySelector('img');"
     +   "var pm=(el.textContent||'').match(/\\$\\d{1,4}(?:[,.]\\d{2,3})*\\.\\d{2}/);"
     +   "if(!img||!pm)continue;"
+    // Skip non-product widgets — payment buttons, chat bubbles, promo tiles.
+    +   "var elText=(el.textContent||'').toLowerCase();"
+    +   "if(widgetRe.test(elText))continue;"
+    // Skip tiny images (icons / payment-button glyphs / chat avatars).
+    // naturalWidth is 0 when the image hasn't loaded — leave those alone.
+    +   "if(img.naturalWidth>0&&img.naturalWidth<60)continue;"
+    +   "if(img.naturalHeight>0&&img.naturalHeight<60)continue;"
     +   "var hasNestedItem=false;"
     +   "for(var c=0;c<el.children.length;c++){var ch=el.children[c];if(ch.querySelector('img')&&(ch.textContent||'').match(/\\$\\d{1,4}(?:[,.]\\d{2,3})*\\.\\d{2}/)){hasNestedItem=true;break;}}"
     +   "if(hasNestedItem)continue;"
@@ -10249,10 +10325,28 @@ function rotationDayHtml(day) {
     +   "});"
     + "}"
 
+    // Dedupe (v35) — by imageUrl OR a name+price+size+color tuple. Sites
+    // like Alo render the same item in multiple cart components (header
+    // mini-cart + main cart list + sticky-bar summary), so leaf-detection
+    // alone leaves duplicates.
+    + "var dedup=[];var seenImg=new Set();var seenKey=new Set();"
+    + "for(var di=0;di<items.length;di++){"
+    +   "var it=items[di];"
+    +   "var iKey=it.imageUrl||'';"
+    +   "var nKey=(it.name||'').toLowerCase().replace(/\\s+/g,' ').trim()+'|'+(it.price||'')+'|'+(it.size||'')+'|'+(it.color||'');"
+    +   "if(iKey&&seenImg.has(iKey))continue;"
+    +   "if(seenKey.has(nKey))continue;"
+    +   "if(iKey)seenImg.add(iKey);"
+    +   "seenKey.add(nKey);"
+    +   "dedup.push(it);"
+    + "}"
+    + "items=dedup;"
+
     + "if(items.length===0){alert('No cart items detected. Make sure you are on the shopping cart or product page.');return;}"
     + "if(items.length>25)items=items.slice(0,25);"
     + "try{var payload=btoa(unescape(encodeURIComponent(JSON.stringify(items))));"
-    + "window.open('" + CLOSET_URL + "#/wishlist?cartImport='+payload,'_blank');}"
+    // URL-encode the payload — same '+' fix as v34 email importer.
+    + "window.open('" + CLOSET_URL + "#/wishlist?cartImport='+encodeURIComponent(payload),'_blank');}"
     + "catch(e){alert('Failed to encode cart: '+e.message);}"
     + "})();";
 
@@ -10327,7 +10421,7 @@ function rotationDayHtml(day) {
     // Brand dictionary — keyed by lowercased substring that appears in
     // sender domain, subject line, or page text. Order matters only for
     // ambiguous prefixes (none here).
-    + "var BRANDS={lululemon:'Lululemon',vuori:'Vuori',aloyoga:'Alo Yoga','alo yoga':'Alo Yoga',patagonia:'Patagonia','rei.com':'REI',athleta:'Athleta','ae.com':'American Eagle','american eagle':'American Eagle',aerie:'Aerie',varley:'Varley',amazon:'Amazon',nordstrom:'Nordstrom',zara:'Zara','h&m':'H&M',hm:'H&M',target:'Target',walmart:'Walmart','macys':'Macy\\'s','macy\\'s':'Macy\\'s',saks:'Saks',revolve:'Revolve','free people':'Free People','urban outfitters':'Urban Outfitters',anthropologie:'Anthropologie',madewell:'Madewell','j.crew':'J.Crew',jcrew:'J.Crew','banana republic':'Banana Republic',gap:'Gap','old navy':'Old Navy',oldnavy:'Old Navy',uniqlo:'Uniqlo',asos:'ASOS',shopbop:'Shopbop',ssense:'SSENSE',farfetch:'Farfetch','net-a-porter':'Net-a-Porter',sephora:'Sephora',ulta:'Ulta','victoria\\'s secret':'Victoria\\'s Secret','fabletics':'Fabletics','outdoor voices':'Outdoor Voices','everlane':'Everlane','reformation':'Reformation','levi':'Levi\\'s','levis':'Levi\\'s'};"
+    + "var BRANDS={lululemon:'Lululemon',vuori:'Vuori',aloyoga:'Alo Yoga','alo yoga':'Alo Yoga',patagonia:'Patagonia','rei.com':'REI',athleta:'Athleta','ae.com':'American Eagle','american eagle':'American Eagle',aerie:'Aerie',varley:'Varley',amazon:'Amazon',nordstrom:'Nordstrom',zara:'Zara','h&m':'H&M','hennes':'H&M',target:'Target',walmart:'Walmart','macys':'Macy\\'s','macy\\'s':'Macy\\'s',saks:'Saks',revolve:'Revolve','free people':'Free People','urban outfitters':'Urban Outfitters',anthropologie:'Anthropologie',madewell:'Madewell','j.crew':'J.Crew',jcrew:'J.Crew','banana republic':'Banana Republic',gap:'Gap','old navy':'Old Navy',oldnavy:'Old Navy',uniqlo:'Uniqlo',asos:'ASOS',shopbop:'Shopbop',ssense:'SSENSE',farfetch:'Farfetch','net-a-porter':'Net-a-Porter',sephora:'Sephora',ulta:'Ulta','victoria\\'s secret':'Victoria\\'s Secret','fabletics':'Fabletics','outdoor voices':'Outdoor Voices','everlane':'Everlane','reformation':'Reformation','levi':'Levi\\'s','levis':'Levi\\'s'};"
 
     // Find a list of DOM scopes (Documents or Elements) where the email body
     // likely lives. Outlook reading pane is an iframe with srcdoc; we also
@@ -10344,8 +10438,18 @@ function rotationDayHtml(day) {
     +   "return scopes;"
     + "}"
 
-    // Brand detection — scan a small set of header-y text first (subject,
-    // sender), then fall back to a bounded slice of the full page text.
+    // Marketplace senders — when the email is from a peer-to-peer
+    // marketplace (Poshmark, Mercari, etc.), the listing title is the
+    // seller's wording, NOT the original brand. Leaving brand blank is
+    // the right call because the user knows the actual product brand and
+    // can fill it in via Edit. Auto-guessing produces wrong brands.
+    + "var MARKETPLACES=['poshmark','mercari','depop','ebay','vinted','thredup','grailed','tradesy','vestiaire','therealreal','farfetch second life','rebag','fashionphile'];"
+
+    // Brand detection — sender mailto first (most authoritative), then
+    // subject heading, then iframe email-body text (only same-origin
+    // readable iframes). NEVER scans document.body.textContent because
+    // that includes Outlook's UI shell (sidebar, other email previews,
+    // ads) and produces false matches.
     + "function detectBrand(){"
     +   "var hdr='';"
     +   "var subjEl=document.querySelector('[role=\"heading\"][aria-level=\"1\"], [role=\"heading\"][aria-level=\"2\"], [aria-label*=\"subject\" i]');"
@@ -10353,10 +10457,33 @@ function rotationDayHtml(day) {
     +   "var fromEls=document.querySelectorAll('[aria-label*=\"sender\" i],[aria-label*=\"from\" i],a[href^=\"mailto:\"],span[title*=\"@\"]');"
     +   "for(var i=0;i<Math.min(fromEls.length,8);i++){hdr+=' '+(fromEls[i].textContent||'')+' '+(fromEls[i].getAttribute('href')||'')+' '+(fromEls[i].getAttribute('title')||'');}"
     +   "hdr=hdr.toLowerCase();"
+    // If the sender/subject screams marketplace, leave brand blank.
+    +   "for(var mi=0;mi<MARKETPLACES.length;mi++){if(hdr.indexOf(MARKETPLACES[mi])>-1)return '';}"
     +   "for(var k in BRANDS){if(hdr.indexOf(k)>-1)return BRANDS[k];}"
-    +   "var tail=(document.body.textContent||'').toLowerCase().slice(0,8000);"
-    +   "for(var k2 in BRANDS){if(tail.indexOf(k2)>-1)return BRANDS[k2];}"
+    // Fallback: scan iframe email bodies only (NOT the whole document).
+    +   "var ifs=document.querySelectorAll('iframe');"
+    +   "var bodyText='';"
+    +   "for(var ii=0;ii<ifs.length;ii++){try{var d=ifs[ii].contentDocument;if(d&&d.body)bodyText+=' '+(d.body.textContent||'');}catch(_){}}"
+    +   "bodyText=bodyText.toLowerCase().slice(0,4000);"
+    +   "if(bodyText){"
+    +     "for(var mj=0;mj<MARKETPLACES.length;mj++){if(bodyText.indexOf(MARKETPLACES[mj])>-1)return '';}"
+    +     "for(var k2 in BRANDS){if(bodyText.indexOf(k2)>-1)return BRANDS[k2];}"
+    +   "}"
     +   "return '';"
+    + "}"
+
+    // Strip noise from a captured product name. Order-confirmation emails
+    // often label items with "Item:", "Order:", "Product:", and concatenate
+    // size/color/price into the same text node — extractName grabs the
+    // whole blob, this trims it back to just the product name.
+    + "function cleanName(s){"
+    +   "if(!s)return '';"
+    +   "var n=String(s).replace(/\\s+/g,' ').trim();"
+    +   "n=n.replace(/^\\s*(item|order|product|sku|style)\\s*[:#-]?\\s*/i,'');"
+    +   "n=n.split(/\\s+(?:size|color|colour|qty|quantity|item\\s*price|price|sku|style|fit)\\s*[:#-]?\\s*/i)[0];"
+    +   "n=n.split('$')[0];"
+    +   "n=n.replace(/\\s*#[A-Za-z0-9_]+\\.\\.\\.?\\s*$/,'');"
+    +   "return n.replace(/\\s+/g,' ').trim();"
     + "}"
 
     // Try to derive a clean item name from a candidate row element.
@@ -10389,8 +10516,8 @@ function rotationDayHtml(day) {
     +     "var p=el.parentElement;var skip=false;while(p){if(seen.has(p)){skip=true;break;}p=p.parentElement;}"
     +     "if(skip)continue;"
     +     "seen.add(el);"
-    +     "var name=extractName(el);"
-    +     "if(!name)continue;"
+    +     "var name=cleanName(extractName(el));"
+    +     "if(!name||name.length<3)continue;"
     +     "var imgSrc=img.getAttribute('src')||img.getAttribute('data-src')||img.getAttribute('data-original-src')||'';"
     +     "var hrefEl=el.querySelector('a[href]');"
     +     "var href=hrefEl?hrefEl.getAttribute('href'):'';"
@@ -10405,6 +10532,24 @@ function rotationDayHtml(day) {
     +     "});"
     +   "}"
     + "}"
+
+    // Dedupe by EITHER image URL OR a name+price+size+color tuple. Outlook
+    // proxies images through different URLs in the iframe vs the parent
+    // doc's [role=document] re-render, so an imageUrl-only check misses
+    // multi-scope dupes. The attr tuple catches that case because the
+    // visible text is identical across scopes.
+    + "var dedup=[];var seenImg=new Set();var seenKey=new Set();"
+    + "for(var di=0;di<items.length;di++){"
+    +   "var it=items[di];"
+    +   "var iKey=it.imageUrl||'';"
+    +   "var nKey=(it.name||'').toLowerCase().replace(/\\s+/g,' ').trim()+'|'+(it.price||'')+'|'+(it.size||'')+'|'+(it.color||'');"
+    +   "if(iKey&&seenImg.has(iKey))continue;"
+    +   "if(seenKey.has(nKey))continue;"
+    +   "if(iKey)seenImg.add(iKey);"
+    +   "seenKey.add(nKey);"
+    +   "dedup.push(it);"
+    + "}"
+    + "items=dedup;"
 
     + "if(items.length===0){alert('No order items detected. Make sure you have an order confirmation email open with the body visible.');return;}"
     + "if(items.length>25)items=items.slice(0,25);"
@@ -10449,10 +10594,8 @@ function rotationDayHtml(day) {
 
       + '<div class="card" style="padding: 16px 20px; margin-bottom: 18px;">'
       +   '<h3 style="margin: 0 0 8px; font-size: 15px;">Tips</h3>'
-      +   '<ul style="font-size: 13px; line-height: 1.6; padding-left: 22px; margin: 0;">'
-      +     '<li>Works best on retailer-sent confirmation emails (Lululemon, Varley, Vuori, Nordstrom, Anthropologie, etc.). Marketing emails with carousels of unrelated products may pull in items you didn\'t buy.</li>'
+      +     '<li>Works best on retailer-sent confirmation emails (Lululemon, Varley, Vuori, Nordstrom, Anthropologie, etc.). Marketplace emails (Poshmark, Mercari, etc.) will leave the brand blank because the seller writes their own listing title — fill in the real brand via Edit afterwards.</li>'
       +     '<li>If the bookmarklet pulls in too much (recommendations, footer ads, etc.), you can delete the extras from your closet right after import.</li>'
-      +     '<li>Gmail (mail.google.com) also works — same bookmarklet, no extra setup.</li>'
       +     '<li>Native Outlook desktop / phone app is <strong>not</strong> supported — only the browser version. Open the email at outlook.live.com first.</li>'
       +   '</ul>'
       + '</div>'
