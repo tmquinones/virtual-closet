@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-05 21:36:25 */
+/* Virtual Closet bundle — built 2026-05-05 22:18:44 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/photo-suggest-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -1884,7 +1884,7 @@ async function openItemDetail(id) {
           <div class="detail-row"><dt>Lifestyle</dt><dd>${escapeHtml(lifestyle)}</dd></div>
           <div class="detail-row"><dt>Season</dt><dd>${escapeHtml(seasons)}</dd></div>
           <div class="detail-row"><dt>Purchased</dt><dd>${fmtDate(item.purchaseDate)}</dd></div>
-          <div class="detail-row"><dt>Price</dt><dd>${fmtCurrency(item.purchasePrice)}</dd></div>
+          <div class="detail-row"><dt>Price</dt><dd>${fmtCurrency(item.purchasePrice)}${(item.originalPrice && item.purchasePrice && item.originalPrice > item.purchasePrice) ? ` <span class="savings-badge">saved ${fmtCurrency(item.originalPrice - item.purchasePrice)} (${Math.round((1 - item.purchasePrice / item.originalPrice) * 100)}% off)</span>` : ''}</dd></div>${(item.originalPrice && item.purchasePrice && item.originalPrice > item.purchasePrice) ? `<div class="detail-row"><dt>Original</dt><dd class="muted"><s>${fmtCurrency(item.originalPrice)}</s></dd></div>` : ''}
           ${item.receipt ? `<div class="detail-row"><dt>Receipt</dt><dd>${item.receipt.type === 'application/pdf' ? 'PDF' : 'Image'} attached · <a href="#/receipts">view in Receipts tab</a></dd></div>` : ''}
           ${(() => {
             if (!window.ratingHelpers) return '';
@@ -2641,6 +2641,11 @@ function itemFormFieldsHtml(item) {
       </div>
 
       <div class="field">
+        <label class="field-label" for="f_originalPrice">Original Price <span class="muted">(optional — what it cost before discount)</span></label>
+        <input class="input" id="f_originalPrice" type="number" step="0.01" min="0" placeholder="0.00" value="${item.originalPrice ?? ''}" />
+      </div>
+
+      <div class="field">
         <label class="field-label" for="f_returnWindow">Return Window <span class="muted">(days from purchase)</span></label>
         <input class="input" id="f_returnWindow" type="number" min="0" max="365" placeholder="30" value="${item.returnWindowDays ?? ''}" />
       </div>
@@ -2853,6 +2858,7 @@ function collectFormFieldsSilent() {
   const tagsRaw = (document.getElementById('f_tags') || {}).value || '';
   const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
   const priceRaw = (document.getElementById('f_purchasePrice') || {}).value || '';
+  const origRaw = (document.getElementById('f_originalPrice') || {}).value || '';
   const returnRaw = (document.getElementById('f_returnWindow') || {}).value || '';
   const askingRaw = (document.getElementById('f_askingPrice') || {}).value || '';
   const get = id => (document.getElementById(id) || {}).value || '';
@@ -2865,6 +2871,7 @@ function collectFormFieldsSilent() {
     size: get('f_size').trim(),
     purchaseDate: get('f_purchaseDate'),
     purchasePrice: priceRaw ? Number(priceRaw) : null,
+    originalPrice: origRaw ? Number(origRaw) : null,
     returnWindowDays: returnRaw ? Number(returnRaw) : null,
     forSale: !!(document.getElementById('f_forSale') || {}).checked,
     askingPrice: askingRaw ? Number(askingRaw) : null,
@@ -2890,6 +2897,7 @@ function collectFormFields() {
   const tagsRaw = document.getElementById('f_tags').value || '';
   const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
   const priceRaw = document.getElementById('f_purchasePrice').value;
+  const origRaw = (document.getElementById('f_originalPrice') || {}).value || '';
   const returnRaw = (document.getElementById('f_returnWindow') || {}).value || '';
   const askingRaw = (document.getElementById('f_askingPrice') || {}).value || '';
   return {
@@ -2901,6 +2909,7 @@ function collectFormFields() {
     size: document.getElementById('f_size').value.trim(),
     purchaseDate: document.getElementById('f_purchaseDate').value,
     purchasePrice: priceRaw ? Number(priceRaw) : null,
+    originalPrice: origRaw ? Number(origRaw) : null,
     returnWindowDays: returnRaw ? Number(returnRaw) : null,
     forSale: !!(document.getElementById('f_forSale') || {}).checked,
     askingPrice: askingRaw ? Number(askingRaw) : null,
@@ -2999,8 +3008,8 @@ async function reviewNext() {
     if (!confirm(`Delete "${itemName}"?\n\nThis cannot be undone.`)) return;
     await dbDeleteItem(id);
     teardownEditPaste();
-    closeModal();
     showToast('Deleted');
+    closeModal();
     setTimeout(reviewNext, 80);
   });
 }
@@ -6555,11 +6564,15 @@ window.addEventListener('DOMContentLoaded', function () {
           <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
             <div class="field">
               <label class="field-label" for="pf_price">Price paid (USD)</label>
-              <input class="input" id="pf_price" type="number" step="0.01" placeholder="e.g. 79.00" value="${prefillPrice}" />
+              <input class="input" id="pf_price" type="number" step="0.01" placeholder="e.g. 46.00" value="${prefillPrice}" />
             </div>
             <div class="field">
               <label class="field-label" for="pf_date">Purchase date</label>
               <input class="input" id="pf_date" type="date" value="${today}" />
+            </div>
+            <div class="field" style="grid-column: 1 / -1;">
+              <label class="field-label" for="pf_original">Original price <span class="muted">(optional - shows in Girl Math savings)</span></label>
+              <input class="input" id="pf_original" type="number" step="0.01" placeholder="e.g. 68.00" />
             </div>
           </div>
           <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 18px;">
@@ -6576,7 +6589,9 @@ window.addEventListener('DOMContentLoaded', function () {
       document.getElementById('pf_save').addEventListener('click', async () => {
         const priceRaw = document.getElementById('pf_price').value;
         const dateRaw = document.getElementById('pf_date').value || today;
+        const origRaw = (document.getElementById('pf_original') || {}).value || '';
         const purchasePrice = priceRaw ? Number(priceRaw) : null;
+        const originalPrice = origRaw ? Number(origRaw) : null;
         const inferredGT = wish.garmentType || _inferGarmentType((wish.name || '') + ' ' + (wish.notes || ''));
         const inferredST = wish.subtype || _inferSubtype((wish.name || '') + ' ' + (wish.notes || ''));
         const closetPayload = {
@@ -6589,6 +6604,7 @@ window.addEventListener('DOMContentLoaded', function () {
           garmentType: inferredGT || '',
           subtype: inferredST || '',
           purchasePrice: (purchasePrice != null && Number.isFinite(purchasePrice)) ? purchasePrice : null,
+          originalPrice: (originalPrice != null && Number.isFinite(originalPrice)) ? originalPrice : null,
           purchaseDate: dateRaw || '',
         };
         if (wish.photo) closetPayload.photo = wish.photo;
@@ -6836,6 +6852,20 @@ window.addEventListener('DOMContentLoaded', function () {
     const missingPrice = items.filter(i => !i.purchasePrice);
     const missingDate = items.filter(i => i.purchasePrice && !i.purchaseDate);
 
+    // Discount / savings — items with both originalPrice and a lower
+    // purchasePrice. Savings = originalPrice - purchasePrice.
+    const discounted = items.filter(i =>
+      Number(i.originalPrice) > 0 &&
+      Number(i.purchasePrice) >= 0 &&
+      Number(i.originalPrice) > Number(i.purchasePrice)
+    );
+    const totalSaved = discounted.reduce((s, i) => s + (Number(i.originalPrice) - Number(i.purchasePrice)), 0);
+    const totalOriginal = discounted.reduce((s, i) => s + Number(i.originalPrice), 0);
+    const overallSavedPct = totalOriginal > 0 ? Math.round((totalSaved / totalOriginal) * 100) : 0;
+    const topSaved = discounted.slice()
+      .sort((a, b) => (Number(b.originalPrice) - Number(b.purchasePrice)) - (Number(a.originalPrice) - Number(a.purchasePrice)))
+      .slice(0, 10);
+
     main.innerHTML = `
       <div class="page-header" style="justify-content: center; flex-direction: column; text-align: center; gap: 0;">
         <h1 class="browse-title">Girl Math</h1>
@@ -6876,6 +6906,49 @@ window.addEventListener('DOMContentLoaded', function () {
           ${monthlyAvg > 0 ? `<div class="gm-quote">Spread out, that's <strong>${$money(monthlyAvg)}/mo</strong> — less than most streaming bundles.</div>` : ''}
           ${realCPW != null ? `<div class="gm-quote">Real cost-per-wear (logged): <strong>${$moneyExact(realCPW)}</strong> across ${totalWears} wears.</div>` : (costPerWear100 > 0 ? `<div class="gm-quote">If you wore each piece <strong>100 times</strong>, CPW would be just ${$moneyExact(costPerWear100)}. Log wears to see your real number.</div>` : '')}
         </div>
+
+        ${discounted.length > 0 ? `
+          <h2 class="gm-h2">Savings — what you didn't pay full price for</h2>
+          <div class="gm-stats" style="margin-bottom: 8px;">
+            <div class="gm-stat">
+              <div class="gm-stat-label">Total saved</div>
+              <div class="gm-stat-value">${$money(totalSaved)}</div>
+              <div class="gm-stat-foot">across ${discounted.length} discounted piece${discounted.length === 1 ? '' : 's'}</div>
+            </div>
+            <div class="gm-stat">
+              <div class="gm-stat-label">Original total</div>
+              <div class="gm-stat-value">${$money(totalOriginal)}</div>
+              <div class="gm-stat-foot">if you'd paid full price</div>
+            </div>
+            <div class="gm-stat">
+              <div class="gm-stat-label">Average discount</div>
+              <div class="gm-stat-value">${overallSavedPct}%</div>
+              <div class="gm-stat-foot">off original price</div>
+            </div>
+          </div>
+          <div class="gm-quotes" style="margin-bottom: 14px;">
+            <div class="gm-quote">You saved <strong>${$money(totalSaved)}</strong> — that's basically a free designer bag.</div>
+          </div>
+          <div class="gm-list">
+            ${topSaved.map((it, idx) => {
+              const url = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
+              const name = it.name || it.subtype || labelForGarmentType(it.garmentType) || 'Untitled';
+              const saved = Number(it.originalPrice) - Number(it.purchasePrice);
+              const pct = Math.round((saved / Number(it.originalPrice)) * 100);
+              return `
+                <div class="gm-row" data-item-id="${it.id}">
+                  <div class="gm-rank">${idx + 1}</div>
+                  <div class="gm-thumb" style="background-image:url('${url}')"></div>
+                  <div class="gm-info">
+                    <div class="gm-name">${escapeHtml(name)}</div>
+                    <div class="gm-meta"><s>${$money(it.originalPrice)}</s> &rarr; <strong>${$money(it.purchasePrice)}</strong> &middot; ${pct}% off</div>
+                  </div>
+                  <div class="gm-price savings-badge">-${$money(saved)}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : ''}
 
         ${years.length > 0 ? `
           <h2 class="gm-h2">Spending by year</h2>
@@ -7035,7 +7108,6 @@ window.addEventListener('DOMContentLoaded', function () {
     maybeRender();
   }
 })();
-
 
 /* ===== js/trip-r1.js ===== */
 // trip-r1.js — Trip packing planner at #/trip

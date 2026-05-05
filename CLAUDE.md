@@ -56,6 +56,21 @@ above and ship in the next DEPLOY.ps1 push.
   receiver. No dedupe, no marketplace detection, no cleanName — those
   came in v34/v35. See PROJECT-LOG.md for the full v32 entry.
 
+**Last shipped (2026-05-05 night — v39):**
+- Bundle: `dist/app.bundle.js?v=1778019525086`, cache `virtual-closet-v39`
+- **`originalPrice` field on closet items** — optional "Original Price"
+  input in Add/Edit form right under "Purchase Price". Captures pre-discount
+  retail so Girl Math can compute savings.
+- **Wishlist Purchased modal** also takes optional original price.
+- **Item detail modal** shows a green "saved $22 (32% off)" badge next to
+  Price when both are present, plus a struck-through Original Price row.
+- **Girl Math: new "Savings" section** (renders only when at least one
+  discounted item exists) showing total saved across all items, original
+  total, average discount %, plus a top-10 list of "biggest scores"
+  ranked by absolute savings.
+- Note: `totalPaid` (Option C — shipping/tax/marketplace fees in the
+  true-cost calculation) was NOT shipped in v39. Still on deck for v40.
+
 **Last shipped (2026-05-05 evening — v38):**
 - Bundle: `dist/app.bundle.js?v=1778016985207`, cache `virtual-closet-v38`
 - **Wear Log Items view** — new `Photos | Items` toggle on `#/slideshow`.
@@ -376,22 +391,4 @@ fee). The closet currently has only one price field, which is ambiguous
 ("did she pay $14 or $23?").
 
 - New optional `totalPaid` field on closet items. Existing `purchasePrice`
-  keeps the item-listed price untouched.
-- **Email importer** — parse the `Total: $X.XX` line from the email body
-  and capture it into `totalPaid`. Falls back to `null` when no clear
-  total is found.
-- **Item edit form** — new "Total paid (with shipping/tax/fees)" field
-  directly under "Purchase Price".
-- **Wishlist Purchased modal** — same field, prefilled to match the price
-  the user just typed.
-- **Receipts page header total** — switch to summing `totalPaid` (falling
-  back to `purchasePrice` for items that don't have one yet).
-- **Insights / Girl Math / cost-per-wear** — switch to `totalPaid` for
-  true-cost calculations.
-- **One-time backfill** — for items where `totalPaid` is blank, set
-  `totalPaid = purchasePrice`. Without this the Receipts running total
-  drops to near-zero on first load after the patch.
-
-### Other smaller items
-
-- Cart-import name extraction is greedy — on Varley t
+  keeps 
