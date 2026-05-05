@@ -56,7 +56,23 @@ above and ship in the next DEPLOY.ps1 push.
   receiver. No dedupe, no marketplace detection, no cleanName — those
   came in v34/v35. See PROJECT-LOG.md for the full v32 entry.
 
-**On deck — Option C (next session, v36):**
+**Last shipped (2026-05-05 evening — v38):**
+- Bundle: `dist/app.bundle.js?v=1778016985207`, cache `virtual-closet-v38`
+- **Wear Log Items view** — new `Photos | Items` toggle on `#/slideshow`.
+  Items view always uses the 2×2 item-thumb collage cover (never the
+  selfie), so days where she didn't upload a selfie look identical to days
+  she did. Toggle preference persists in `localStorage['vc:wearlogView']`.
+- **Photo-driven daily logging (Option A — color heuristic)** — new module
+  `js/photo-suggest-r1.js` extracts dominant colors from the uploaded
+  daily photo via canvas quantization (4-bits/channel, 4096 buckets), maps
+  each to the nearest palette color in `COLOR_HEX`, then ranks closet
+  items by `color` + `family` overlap. Daily editor (`js/daily-r1.js`)
+  renders a "Suggested from photo" chip strip above the manual picker —
+  one tap to add. No server, no ML model download, runs in <100 ms locally.
+  Future iterations: option B (TF.js MobileNet visual similarity) or C
+  (cloud vision API once a backend exists).
+
+**On deck — Option C (was v36, now v39):**
 Per-item `totalPaid` field for tracking actual amount paid (item price +
 shipping + tax + marketplace fee). User asked for this after a Poshmark
 $14 item actually cost $23.44 with fees. Schema + edit form + email
@@ -378,28 +394,4 @@ fee). The closet currently has only one price field, which is ambiguous
 
 ### Other smaller items
 
-- Cart-import name extraction is greedy — on Varley the captured `name`
-  field once included color + size + price + UI text concatenated (e.g.
-  `"Davidson Sweat Color: Olive Marl Size: XS $138.00 Move to wishlist"`).
-  v34's `cleanName` post-processor handles most of this, but Varley should
-  still be re-tested after v35 to confirm.
-- See `WORK-TODO.md` for the longer backlog (mobile app conversion, more
-  brand support for cart-import, etc.).
-
----
-
-## User context
-
-- **Tiffany Foster** (`tmquinones` on GitHub, `cqtq2025@gmail.com`).
-- Pre-fill her username in URLs / `gh` commands.
-- She's not a developer. Keep guidance terse and concrete: exact PowerShell
-  commands, exact button labels, exact paths. Avoid jargon.
-- She runs commands from PowerShell. JS goes in DevTools console (F12),
-  **not** PowerShell.
-- Her DevTools may show "Don't paste code into the DevTools Console..." —
-  she can type `allow pasting` once to unlock it.
-
----
-
-_Last updated: 2026-05-05 — end of v35 ship + v36 planning session
-(email importer, cart importer hardening, Purchased button, Receipts wiring)._
+- Cart-import name extraction is greedy — on Varley t

@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-05-05 19:42:02 */
-/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
+/* Virtual Closet bundle — built 2026-05-05 21:36:25 */
+/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/photo-suggest-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -8953,12 +8953,18 @@ function rotationDayHtml(day) {
 // daily-r1.js — Daily outfit logger at #/daily
 // Upload one photo per day, optional caption, then check off which closet
 // pieces you wore. Saved to dailyOutfits IndexedDB store.
+//
+// v37+: when a photo is uploaded, photo-suggest-r1.js runs heuristic color
+// matching against the closet and surfaces top suggestions as quick-tap
+// chips above the manual picker.
 
 (function() {
   let editingId = null;
   let pendingPhoto = null;        // Blob (resized)
   let pendingPhotoUrl = null;     // object URL for preview
   let selectedItemIds = new Set();
+  let photoSuggestions = [];      // [item, ...] from suggestItemsFromPhoto
+  let photoSuggestLoading = false;
 
   function todayISO() {
     const d = new Date();
@@ -8982,6 +8988,8 @@ function rotationDayHtml(day) {
     pendingPhoto = null;
     pendingPhotoUrl = null;
     selectedItemIds = new Set();
+    photoSuggestions = [];
+    photoSuggestLoading = false;
 
     const all = await dbGetAllDaily();
     all.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
@@ -9053,6 +9061,8 @@ function rotationDayHtml(day) {
     pendingPhoto = null;
     pendingPhotoUrl = null;
     selectedItemIds = new Set();
+    photoSuggestions = [];
+    photoSuggestLoading = false;
     let existing = null;
     if (id) {
       const all = await dbGetAllDaily();
@@ -9066,6 +9076,78 @@ function rotationDayHtml(day) {
       }
     }
     renderEditor(existing);
+    // If we loaded an existing day with a photo, run suggestions in the
+    // background. Editor re-renders on completion.
+    if (pendingPhoto && typeof suggestItemsFromPhoto === 'function') {
+      runSuggestionsForCurrentPhoto(existing);
+    }
+  }
+
+  async function runSuggestionsForCurrentPhoto(existing) {
+    if (!pendingPhoto || typeof suggestItemsFromPhoto !== 'function') return;
+    photoSuggestLoading = true;
+    photoSuggestions = [];
+    try {
+      const itemsRaw = await dbGetAllItems();
+      const items = (typeof activeItems === 'function') ? activeItems(itemsRaw) : itemsRaw;
+      const suggested = await suggestItemsFromPhoto(pendingPhoto, items, { topN: 15 });
+      photoSuggestions = suggested || [];
+    } catch (e) {
+      console.warn('photo-suggest failed:', e);
+      photoSuggestions = [];
+    } finally {
+      photoSuggestLoading = false;
+    }
+    // Re-render so the suggestion strip appears.
+    renderEditor(existing);
+  }
+
+  function suggestionsHtml() {
+    if (!pendingPhoto && !photoSuggestLoading) return '';
+    if (photoSuggestLoading) {
+      return `
+        <div class="card daily-suggest-card" style="padding: 14px 18px; margin: 14px 0;">
+          <div class="daily-suggest-head">
+            <span class="daily-suggest-title">Suggested from photo</span>
+            <span class="muted" style="font-size:11px;">analyzing colors…</span>
+          </div>
+        </div>
+      `;
+    }
+    if (!photoSuggestions.length) {
+      return `
+        <div class="card daily-suggest-card" style="padding: 14px 18px; margin: 14px 0;">
+          <div class="daily-suggest-head">
+            <span class="daily-suggest-title">Suggested from photo</span>
+            <span class="muted" style="font-size:11px;">No close color matches — tap pieces below.</span>
+          </div>
+        </div>
+      `;
+    }
+    const chips = photoSuggestions.map(it => {
+      const url = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
+      const sel = selectedItemIds.has(it.id);
+      const meta = [it.brand, it.color].filter(Boolean).join(' · ');
+      return `
+        <button type="button" class="daily-suggest-chip ${sel ? 'selected' : ''}" data-suggest-id="${it.id}" title="${escapeHtml(meta)}">
+          <div class="daily-suggest-thumb" style="background-image:url('${url}')"></div>
+          <div class="daily-suggest-text">
+            <div class="daily-suggest-name">${escapeHtml(it.name || it.subtype || '—')}</div>
+            <div class="daily-suggest-meta muted">${escapeHtml(meta)}</div>
+          </div>
+          ${sel ? '<div class="daily-suggest-check">✓</div>' : ''}
+        </button>
+      `;
+    }).join('');
+    return `
+      <div class="card daily-suggest-card" style="padding: 14px 18px; margin: 14px 0;">
+        <div class="daily-suggest-head">
+          <span class="daily-suggest-title">Suggested from photo</span>
+          <span class="muted" style="font-size:11px;">${photoSuggestions.length} match${photoSuggestions.length === 1 ? '' : 'es'} by color · tap to add</span>
+        </div>
+        <div class="daily-suggest-chips">${chips}</div>
+      </div>
+    `;
   }
 
   async function renderEditor(existing) {
@@ -9105,9 +9187,12 @@ function rotationDayHtml(day) {
               <input type="file" id="d_photo" accept="image/*" hidden />
             </div>
             ${pendingPhotoUrl ? '<button class="btn btn-ghost btn-sm" id="d_photo_clear" style="margin-top: 6px;">Remove photo</button>' : ''}
+            <div class="muted" style="font-size:11px; margin-top:6px;">Upload a photo and we'll suggest matching pieces from your closet.</div>
           </div>
         </div>
       </div>
+
+      ${suggestionsHtml()}
 
       <h2 style="font-family: 'Playfair Display', serif; margin: 16px 0 10px;">Tag what you wore</h2>
       <div class="muted" style="font-size: 12px; margin-bottom: 12px;">${items.length} active pieces in your closet · click to toggle</div>
@@ -9145,7 +9230,12 @@ function rotationDayHtml(day) {
         }
         if (pendingPhotoUrl) URL.revokeObjectURL(pendingPhotoUrl);
         pendingPhotoUrl = blobToUrl(pendingPhoto);
+        photoSuggestions = [];
+        photoSuggestLoading = true;
         renderEditor(existing);
+        // Run suggestions in background; renderEditor will be called again
+        // when they're ready.
+        runSuggestionsForCurrentPhoto(existing);
       } catch (err) {
         alert('Could not load that image: ' + err.message);
       }
@@ -9154,26 +9244,72 @@ function rotationDayHtml(day) {
       pendingPhoto = null;
       if (pendingPhotoUrl) URL.revokeObjectURL(pendingPhotoUrl);
       pendingPhotoUrl = null;
+      photoSuggestions = [];
+      photoSuggestLoading = false;
       renderEditor(existing);
     });
 
     main.querySelectorAll('[data-pick-id]').forEach(card => {
       card.addEventListener('click', () => {
         const id = Number(card.dataset.pickId);
-        if (selectedItemIds.has(id)) selectedItemIds.delete(id);
-        else selectedItemIds.add(id);
-        // Re-render just the card and the count to keep things snappy.
-        card.classList.toggle('selected');
+        toggleItem(id);
+        // Update both the picker tile and any matching suggestion chip
+        card.classList.toggle('selected', selectedItemIds.has(id));
         const check = card.querySelector('.daily-pick-check');
         if (selectedItemIds.has(id) && !check) {
           card.insertAdjacentHTML('beforeend', '<div class="daily-pick-check">✓</div>');
         } else if (!selectedItemIds.has(id) && check) {
           check.remove();
         }
-        const sub = document.querySelector('.page-subtitle');
-        if (sub) sub.textContent = `${selectedItemIds.size} piece${selectedItemIds.size === 1 ? '' : 's'} tagged`;
+        const suggestChip = main.querySelector(`[data-suggest-id="${id}"]`);
+        if (suggestChip) {
+          suggestChip.classList.toggle('selected', selectedItemIds.has(id));
+          const sCheck = suggestChip.querySelector('.daily-suggest-check');
+          if (selectedItemIds.has(id) && !sCheck) {
+            suggestChip.insertAdjacentHTML('beforeend', '<div class="daily-suggest-check">✓</div>');
+          } else if (!selectedItemIds.has(id) && sCheck) {
+            sCheck.remove();
+          }
+        }
+        updateCountSubtitle();
       });
     });
+
+    main.querySelectorAll('[data-suggest-id]').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const id = Number(chip.dataset.suggestId);
+        toggleItem(id);
+        chip.classList.toggle('selected', selectedItemIds.has(id));
+        const sCheck = chip.querySelector('.daily-suggest-check');
+        if (selectedItemIds.has(id) && !sCheck) {
+          chip.insertAdjacentHTML('beforeend', '<div class="daily-suggest-check">✓</div>');
+        } else if (!selectedItemIds.has(id) && sCheck) {
+          sCheck.remove();
+        }
+        // Sync the picker card too
+        const pickerCard = main.querySelector(`[data-pick-id="${id}"]`);
+        if (pickerCard) {
+          pickerCard.classList.toggle('selected', selectedItemIds.has(id));
+          const pCheck = pickerCard.querySelector('.daily-pick-check');
+          if (selectedItemIds.has(id) && !pCheck) {
+            pickerCard.insertAdjacentHTML('beforeend', '<div class="daily-pick-check">✓</div>');
+          } else if (!selectedItemIds.has(id) && pCheck) {
+            pCheck.remove();
+          }
+        }
+        updateCountSubtitle();
+      });
+    });
+  }
+
+  function toggleItem(id) {
+    if (selectedItemIds.has(id)) selectedItemIds.delete(id);
+    else selectedItemIds.add(id);
+  }
+
+  function updateCountSubtitle() {
+    const sub = document.querySelector('.page-subtitle');
+    if (sub) sub.textContent = `${selectedItemIds.size} piece${selectedItemIds.size === 1 ? '' : 's'} tagged`;
   }
 
   async function saveDaily() {
@@ -9344,7 +9480,7 @@ function rotationDayHtml(day) {
       ` : monthList.map(([ym, list]) => `
         <section class="slideshow-month">
           <h2 class="slideshow-month-title">${escapeHtml(monthLabel(ym))} <span class="muted" style="font-size: 12px; margin-left: 8px;">${list.length} day${list.length === 1 ? '' : 's'}</span></h2>
-          <div class="${view === 'items' ? 'wearlog-items-grid' : 'slideshow-row'}">
+          <div class="slideshow-row">
             ${list.map(d => view === 'items' ? itemsCardHtml(d, itemMap) : slideCardHtml(d, itemMap)).join('')}
           </div>
         </section>
@@ -9403,33 +9539,36 @@ function rotationDayHtml(day) {
     `;
   }
 
-  // Items-first card — date header + grid of pieces, no photo
+  // Items-first card — same compact slide-card layout as Photos view, but
+  // the cover is ALWAYS the 2x2 item-thumb collage (never the selfie).
+  // This way every day looks identical regardless of whether a selfie was
+  // uploaded — perfect for "not feeling cute" days.
   function itemsCardHtml(day, itemMap) {
     const ids = [...day.itemIds];
-    const items = ids.map(id => itemMap.get(id)).filter(Boolean);
+    const previewItems = ids.slice(0, 4).map(id => itemMap.get(id)).filter(Boolean);
     const dateLabel = fmtDay(day.date) || 'Undated';
 
-    const itemTiles = items.map(it => {
-      const u = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
-      const meta = [it.brand, it.color].filter(Boolean).join(' · ');
-      return `
-        <div class="wearlog-item-tile">
-          <div class="wearlog-item-thumb" style="${u ? `background-image:url('${u}')` : 'background:var(--bg-muted, #f3f3f3);'}"></div>
-          <div class="wearlog-item-name">${escapeHtml(it.name || it.subtype || 'Untitled')}</div>
-          ${meta ? `<div class="wearlog-item-meta muted">${escapeHtml(meta)}</div>` : ''}
-        </div>
-      `;
-    }).join('') || '<div class="muted" style="padding:14px;">No pieces tagged.</div>';
+    let coverHtml;
+    if (previewItems.length > 0) {
+      const cells = previewItems.map(it => {
+        const u = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
+        return `<div class="slide-cover-cell" style="background-image:url('${u}')"></div>`;
+      }).join('');
+      const moreBadge = ids.length > 4 ? `<div class="slide-cover-more">+${ids.length - 4}</div>` : '';
+      coverHtml = `<div class="slide-cover slide-cover-collage slide-cover-${previewItems.length}">${cells}${moreBadge}</div>`;
+    } else {
+      coverHtml = `<div class="slide-cover slide-cover-empty"><div class="slide-no-photo">No items</div></div>`;
+    }
 
     return `
-      <article class="wearlog-items-card" data-slide-day="${escapeHtml(day.date)}">
-        <header class="wearlog-items-head">
-          <div class="wearlog-items-date">${escapeHtml(dateLabel)}</div>
-          ${day.caption ? `<div class="wearlog-items-caption muted">${escapeHtml(day.caption)}</div>` : ''}
-          <div class="wearlog-items-count muted">${items.length} piece${items.length === 1 ? '' : 's'}</div>
-        </header>
-        <div class="wearlog-items-tiles">${itemTiles}</div>
-      </article>
+      <div class="slide-card" data-slide-day="${escapeHtml(day.date)}">
+        ${coverHtml}
+        <div class="slide-info">
+          <div class="slide-date">${escapeHtml(dateLabel)}</div>
+          ${day.caption ? `<div class="slide-caption">${escapeHtml(day.caption)}</div>` : ''}
+          <div class="slide-piece-count muted">${ids.length} piece${ids.length === 1 ? '' : 's'}</div>
+        </div>
+      </div>
     `;
   }
 
@@ -10674,6 +10813,134 @@ function rotationDayHtml(day) {
   window.addEventListener('hashchange', maybeRender);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', maybeRender);
   else maybeRender();
+})();
+
+
+/* ===== js/photo-suggest-r1.js ===== */
+// photo-suggest-r1.js — heuristic color-based item suggestions from a daily photo.
+// Local/no-server: extracts dominant photo colors via canvas, maps each to the
+// nearest palette color in data-r9.js's COLOR_HEX, then ranks closet items by
+// how well their `color` field overlaps. Exposes:
+//   - window.extractDominantColors(blob, maxColors=6) → [{rgb:[r,g,b], weight}]
+//   - window.suggestItemsFromPhoto(blob, items, {topN}) → [item, ...]
+
+(function () {
+  async function extractDominantColors(blob, maxColors = 6) {
+    if (!blob) return [];
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = rej;
+        i.src = url;
+      });
+      const canvas = document.createElement('canvas');
+      const SIZE = 80;
+      canvas.width = SIZE;
+      canvas.height = SIZE;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, SIZE, SIZE);
+      const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
+
+      // Quantize to 4 bits/channel → 4096 buckets, accumulate exact RGB sums
+      // so we can recover the bucket's centroid color.
+      const buckets = new Map();
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 128) continue; // transparent
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        // Skip near-white (skin/background washout) and near-black extremes,
+        // but keep a representative sample of each so they can still match.
+        const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+        const cur = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
+        cur.count++;
+        cur.r += r;
+        cur.g += g;
+        cur.b += b;
+        buckets.set(key, cur);
+      }
+
+      const total = SIZE * SIZE;
+      return [...buckets.values()]
+        .map(c => ({
+          rgb: [Math.round(c.r / c.count), Math.round(c.g / c.count), Math.round(c.b / c.count)],
+          weight: c.count / total,
+        }))
+        .sort((a, b) => b.weight - a.weight)
+        .slice(0, maxColors);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function hexToRgb(hex) {
+    if (!hex || typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) return null;
+    return [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+  }
+  function rgbDist2(a, b) {
+    const dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2];
+    return dr * dr + dg * dg + db * db;
+  }
+
+  // Nearest palette color name (Black, Olive, Hot Pink, …) for a single RGB.
+  function nearestPaletteColor(rgb) {
+    if (typeof COLOR_HEX !== 'object' || !COLOR_HEX) return null;
+    let bestName = null, bestDist = Infinity;
+    for (const [name, hex] of Object.entries(COLOR_HEX)) {
+      const target = hexToRgb(hex);
+      if (!target) continue;
+      const d = rgbDist2(rgb, target);
+      if (d < bestDist) { bestDist = d; bestName = name; }
+    }
+    return bestName;
+  }
+
+  async function suggestItemsFromPhoto(blob, items, options) {
+    options = options || {};
+    const topN = options.topN || 15;
+    if (!blob || !Array.isArray(items) || items.length === 0) return [];
+
+    let dominants;
+    try { dominants = await extractDominantColors(blob, 6); }
+    catch (_) { return []; }
+    if (!dominants.length) return [];
+
+    // Build canonical-color and family weights from the photo's dominant
+    // colors, weighted by pixel coverage.
+    const colorWeights = new Map();
+    const familyWeights = new Map();
+    for (const dc of dominants) {
+      const name = nearestPaletteColor(dc.rgb);
+      if (!name) continue;
+      colorWeights.set(name, (colorWeights.get(name) || 0) + dc.weight);
+      const fam = (typeof familyForColor === 'function') ? familyForColor(name) : null;
+      if (fam) familyWeights.set(fam, (familyWeights.get(fam) || 0) + dc.weight);
+    }
+
+    const scored = items.map(it => {
+      let s = 0;
+      const raw = (it.color || '').trim();
+      if (!raw) return { item: it, score: 0 };
+      const c = (typeof normalizeColor === 'function') ? normalizeColor(raw) : raw;
+      if (c && colorWeights.has(c)) s += colorWeights.get(c) * 5;
+      const fam = (typeof familyForColor === 'function') ? familyForColor(c) : null;
+      if (fam && familyWeights.has(fam)) s += familyWeights.get(fam) * 2;
+      return { item: it, score: s };
+    });
+
+    return scored
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topN)
+      .map(x => x.item);
+  }
+
+  window.extractDominantColors = extractDominantColors;
+  window.suggestItemsFromPhoto = suggestItemsFromPhoto;
 })();
 
 
