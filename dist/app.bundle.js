@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-05-02 02:46:21 */
-/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
+/* Virtual Closet bundle — built 2026-05-05 01:53:54 */
+/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -1276,7 +1276,128 @@ const closetState = {
   sort: 'purchase-newest'
 };
 
+// Handles ?orderImport=BASE64 from the email-import bookmarklet. Reads the
+// param (or a sessionStorage stash from before signin), confirms with the
+// user, then fans out into dbAddItem for each item with the photo fetched
+// from imageUrl. Mirrors _handleCartImportParam in wishlist-r6.js.
+async function _handleOrderImportParam(params) {
+  let enc = (params && params.orderImport) ? params.orderImport : null;
+  let fromUrl = !!enc;
+
+  // Fall back to a stash from before signin
+  if (!enc) {
+    try { enc = sessionStorage.getItem('vc:pendingOrderImport'); } catch (_) {}
+  }
+  if (!enc) return [];
+
+  // Not signed in yet? Stash and bail — the signin handler will route us
+  // back here once the user has a real DB to write to.
+  if (typeof getCurrentUser === 'function' && !getCurrentUser()) {
+    try { sessionStorage.setItem('vc:pendingOrderImport', enc); } catch (_) {}
+    return [];
+  }
+
+  // Strip from URL (or stash) so a refresh doesn't re-prompt
+  if (fromUrl) {
+    try {
+      const hash = location.hash || '';
+      const qIdx = hash.indexOf('?');
+      if (qIdx >= 0) {
+        const ps = new URLSearchParams(hash.slice(qIdx + 1));
+        ps.delete('orderImport');
+        const newHash = ps.toString() ? '#/closet?' + ps.toString() : '#/closet';
+        history.replaceState(null, '', location.pathname + location.search + newHash);
+      }
+    } catch (_) {}
+  }
+  try { sessionStorage.removeItem('vc:pendingOrderImport'); } catch (_) {}
+
+  let items;
+  try {
+    const json = decodeURIComponent(escape(atob(enc)));
+    items = JSON.parse(json);
+  } catch (e) {
+    console.warn('orderImport decode failed:', e);
+    return [];
+  }
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const ok = confirm(
+    `Import ${items.length} item${items.length === 1 ? '' : 's'} from this order email into your closet?\n\n` +
+    items.slice(0, 5).map(i => `• ${i.brand ? i.brand + ' — ' : ''}${i.name}${i.price ? ' ($' + i.price.toFixed(2) + ')' : ''}`).join('\n') +
+    (items.length > 5 ? `\n...and ${items.length - 5} more` : '') +
+    `\n\nYou can edit price, date, color, size, etc. on each item afterwards.`
+  );
+  if (!ok) return [];
+
+  const today = new Date().toISOString().slice(0, 10);
+  const newIds = [];
+  for (const it of items) {
+    if (!it || !it.name) continue;
+    try {
+      const closetItem = {
+        name: String(it.name).slice(0, 200),
+        brand: String(it.brand || '').slice(0, 100),
+        color: String(it.color || '').slice(0, 100),
+        size: String(it.size || '').slice(0, 50),
+        purchasePrice: (it.price && Number.isFinite(Number(it.price))) ? Number(it.price) : null,
+        purchaseDate: today,
+        url: String(it.url || '').slice(0, 500),
+        notes: '',
+      };
+      if (it.imageUrl && typeof fetchImageBlob === 'function') {
+        try {
+          const blob = await fetchImageBlob(it.imageUrl);
+          if (typeof resizeImage === 'function') {
+            closetItem.photo = await resizeImage(blob, 1200, 0.88);
+          } else {
+            closetItem.photo = blob;
+          }
+        } catch (imgErr) {
+          console.warn('orderImport image fetch failed:', it.imageUrl, imgErr);
+        }
+      }
+      const newId = await dbAddItem(closetItem);
+      if (newId) newIds.push(newId);
+    } catch (e) {
+      console.warn('orderImport item save failed:', it && it.name, e);
+    }
+  }
+
+  if (newIds.length > 0) {
+    try {
+      sessionStorage.setItem('vc:lastImportIds', JSON.stringify(newIds));
+      sessionStorage.setItem('vc:lastImportAt', String(Date.now()));
+    } catch (_) {}
+    try { showToast('Imported ' + newIds.length + ' item' + (newIds.length === 1 ? '' : 's') + ' to closet'); } catch (_) {}
+  } else {
+    try { showToast('No items imported'); } catch (_) {}
+  }
+  return newIds;
+}
+
 async function renderClosetView(main, params, fromRouter = false) {
+  // Handle ?orderImport=base64 from the email-import bookmarklet BEFORE we
+  // read the items list, so newly imported pieces show up in this render.
+  // Wrapped — a malformed payload must never blank the closet page.
+  try {
+    await _handleOrderImportParam(params);
+  } catch (e) {
+    console.error('orderImport handler crashed:', e);
+    try {
+      const h = location.hash || '';
+      const qi = h.indexOf('?');
+      if (qi >= 0) {
+        const ps = new URLSearchParams(h.slice(qi + 1));
+        if (ps.has('orderImport')) {
+          ps.delete('orderImport');
+          const newHash = ps.toString() ? '#/closet?' + ps.toString() : '#/closet';
+          history.replaceState(null, '', location.pathname + location.search + newHash);
+        }
+      }
+      sessionStorage.removeItem('vc:pendingOrderImport');
+    } catch (_) {}
+  }
   const allItems = await dbGetAllItems();
   // Returned items are no longer owned — keep them out of counts and the grid.
   closetState.items = (typeof activeItems === 'function') ? activeItems(allItems) : allItems;
@@ -4751,7 +4872,7 @@ function _renderTile(group) {
 /* ===== js/app-r10.js ===== */
 // app.js — main router and app glue
 
-const ROUTES = ['browse', 'closet', 'add', 'outfits', 'build', 'recover', 'audit', 'insights', 'wishlist', 'girlmath', 'trip', 'compare', 'capsule', 'returned', 'daily', 'slideshow', 'notes', 'receipts', 'returns-due', 'shop', 'top10', 'cart-import'];
+const ROUTES = ['browse', 'closet', 'add', 'outfits', 'build', 'recover', 'audit', 'insights', 'wishlist', 'girlmath', 'trip', 'compare', 'capsule', 'returned', 'daily', 'slideshow', 'notes', 'receipts', 'returns-due', 'shop', 'top10', 'cart-import', 'email-import'];
 
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
@@ -4794,6 +4915,7 @@ async function router() {
     case 'shop':     if (typeof window.renderShopView === 'function') await window.renderShopView(main); break;
     case 'top10':    if (typeof window.renderTop10View === 'function') await window.renderTop10View(main); break;
     case 'cart-import': if (typeof window.renderCartImportView === 'function') await window.renderCartImportView(main); break;
+    case 'email-import': if (typeof window.renderEmailImportView === 'function') await window.renderEmailImportView(main); break;
     default:        await renderClosetView(main, params, true);
   }
 }
@@ -4933,6 +5055,13 @@ function wireLoginScreen() {
       try {
         if (sessionStorage.getItem('vc:pendingCartImport') && !location.hash.startsWith('#/wishlist')) {
           location.hash = '#/wishlist';
+        }
+      } catch (_) {}
+      // Same handoff for an email order-import: route to closet so the
+      // deferred import lands in the user's own DB instead of the guest one.
+      try {
+        if (sessionStorage.getItem('vc:pendingOrderImport') && !location.hash.startsWith('#/closet')) {
+          location.hash = '#/closet';
         }
       } catch (_) {}
       await router();
@@ -6019,6 +6148,7 @@ window.addEventListener('DOMContentLoaded', function () {
         </div>
         <div class="wishlist-actions">
           ${item.url ? `<a class="btn btn-primary btn-sm" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Visit →</a>` : ''}
+          <button class="btn btn-sm" data-purchased="${item.id}" title="Move to closet as a purchased item">✓ Purchased</button>
           <button class="btn btn-sm" data-edit="${item.id}">Edit</button>
           <button class="btn btn-ghost btn-sm" data-delete="${item.id}">Delete</button>
         </div>
@@ -6326,6 +6456,14 @@ window.addEventListener('DOMContentLoaded', function () {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       });
     });
+    document.querySelectorAll('[data-purchased]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const id = Number(b.dataset.purchased);
+        const items = await dbGetAllWishlistItems();
+        const item = items.find(x => x.id === id);
+        if (item) await _purchaseFlow(item);
+      });
+    });
     document.querySelectorAll('[data-delete]').forEach(b => {
       b.addEventListener('click', async () => {
         const id = Number(b.dataset.delete);
@@ -6333,6 +6471,86 @@ window.addEventListener('DOMContentLoaded', function () {
         await dbDeleteWishlistItem(id);
         showToast('Removed');
         render();
+      });
+    });
+  }
+
+  // ===== Purchased flow: wishlist -> closet =====
+  // Quick prompt asking for price + date, then create a closet item and
+  // delete the wishlist row. Photos, brand, size, color, url, garmentType
+  // and subtype carry over so the user lands on a fully-populated closet
+  // item instead of an empty stub.
+  function _purchaseFlow(wish) {
+    return new Promise((resolve) => {
+      if (typeof openModal !== 'function') return resolve(false);
+      const today = new Date().toISOString().slice(0, 10);
+      const prefillPrice = (wish.targetPrice != null && Number.isFinite(Number(wish.targetPrice)))
+        ? Number(wish.targetPrice).toFixed(2) : '';
+      openModal(`
+        <div style="max-width: 460px;">
+          <h2 style="font-family: 'Playfair Display', serif; font-size: 22px; margin: 0 0 6px;">Mark as purchased</h2>
+          <p class="muted" style="font-size: 13px; margin: 0 0 16px;">
+            Move <strong>${escapeHtml(wish.name || 'this item')}</strong> from wishlist to closet.
+          </p>
+          <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="field">
+              <label class="field-label" for="pf_price">Price paid (USD)</label>
+              <input class="input" id="pf_price" type="number" step="0.01" placeholder="e.g. 79.00" value="${prefillPrice}" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="pf_date">Purchase date</label>
+              <input class="input" id="pf_date" type="date" value="${today}" />
+            </div>
+          </div>
+          <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 18px;">
+            <button class="btn" id="pf_cancel">Cancel</button>
+            <button class="btn btn-primary" id="pf_save">Save to closet</button>
+          </div>
+        </div>
+      `);
+      const cancel = () => {
+        if (typeof closeModal === 'function') closeModal();
+        resolve(false);
+      };
+      document.getElementById('pf_cancel').addEventListener('click', cancel);
+      document.getElementById('pf_save').addEventListener('click', async () => {
+        const priceRaw = document.getElementById('pf_price').value;
+        const dateRaw = document.getElementById('pf_date').value || today;
+        const purchasePrice = priceRaw ? Number(priceRaw) : null;
+        const inferredGT = wish.garmentType || _inferGarmentType((wish.name || '') + ' ' + (wish.notes || ''));
+        const inferredST = wish.subtype || _inferSubtype((wish.name || '') + ' ' + (wish.notes || ''));
+        const closetPayload = {
+          name: wish.name || '',
+          brand: wish.brand || '',
+          color: wish.color || '',
+          size: wish.size || '',
+          url: wish.url || '',
+          notes: wish.notes || '',
+          garmentType: inferredGT || '',
+          subtype: inferredST || '',
+          purchasePrice: (purchasePrice != null && Number.isFinite(purchasePrice)) ? purchasePrice : null,
+          purchaseDate: dateRaw || '',
+        };
+        if (wish.photo) closetPayload.photo = wish.photo;
+        if (wish.photo2) closetPayload.photo2 = wish.photo2;
+        if (wish.thumb) closetPayload.thumb = wish.thumb;
+        try {
+          const newId = await dbAddItem(closetPayload);
+          await dbDeleteWishlistItem(wish.id);
+          if (typeof closeModal === 'function') closeModal();
+          try { showToast('Moved to closet'); } catch (_) {}
+          // Optional: stash the new id so the user can find it on the closet
+          // page. We reuse the existing review banner mechanism.
+          try {
+            sessionStorage.setItem('vc:lastImportIds', JSON.stringify([newId]));
+            sessionStorage.setItem('vc:lastImportAt', String(Date.now()));
+          } catch (_) {}
+          await render();
+          resolve(true);
+        } catch (e) {
+          alert('Could not move to closet: ' + (e?.message || e));
+          resolve(false);
+        }
       });
     });
   }
@@ -9137,7 +9355,6 @@ function rotationDayHtml(day) {
   else maybeRender();
 })();
 
- 
 
 /* ===== js/notes-r1.js ===== */
 // notes-r1.js — Personal updates / features-to-add board at #/notes
@@ -9306,6 +9523,7 @@ function rotationDayHtml(day) {
           <h1>Receipts &amp; Invoices</h1>
           <div class="page-subtitle">${withReceipt.length} receipt${withReceipt.length === 1 ? '' : 's'} on file${totalSpent ? ' · $' + totalSpent.toFixed(2) + ' documented' : ''}</div>
         </div>
+        <a href="#/email-import" class="btn btn-primary">📧 Import from email</a>
       </div>
 
       <div class="card" style="padding: 16px 18px; margin-bottom: 18px;">
@@ -9313,7 +9531,9 @@ function rotationDayHtml(day) {
           Attach a receipt photo or PDF to any item from its detail page → Edit. Receipts live alongside the rest of your closet data — exported with your backup, never sent anywhere.
         </div>
         <div class="muted" style="font-size: 12px; margin-top: 8px;">
-          <strong>Coming later:</strong> a unique forwarding address that auto-imports order confirmations from your email. Needs server infrastructure.
+          <strong>Quick add from an order email:</strong> use the
+          <a href="#/email-import" style="text-decoration: underline;">Email Importer</a>
+          bookmarklet — open an order confirmation in Outlook or Gmail (browser version), click the bookmark, items land in your closet with price + date prefilled. No typing.
         </div>
       </div>
 
@@ -10070,6 +10290,183 @@ function rotationDayHtml(day) {
 
   function maybeRender() {
     if (location.hash === '#/cart-import') render(document.getElementById('main'));
+  }
+  window.addEventListener('hashchange', maybeRender);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', maybeRender);
+  else maybeRender();
+})();
+
+
+/* ===== js/emailimport-r1.js ===== */
+// emailimport-r1.js — Email-order-import setup view at #/email-import
+// Bookmarklet that scans an open Outlook (or Gmail) order-confirmation email
+// for image+price item rows, detects the brand from the sender/subject, and
+// fires the items into the user's closet via #/closet?orderImport=BASE64.
+//
+// Sister module to cartimport-r1.js (which targets retail carts and lands in
+// the wishlist). This one targets order CONFIRMATION emails and lands in the
+// closet because they're already paid for. The receiver lives in
+// closet-r10.js (_handleOrderImportParam).
+//
+// Outlook reading-pane note: the email body is typically rendered into an
+// iframe with srcdoc="..." which is same-origin with outlook.live.com, so
+// its contentDocument is readable. We try iframes first, then known
+// reading-pane container selectors, then fall back to the whole document.
+
+(function() {
+  var CLOSET_URL = 'https://tmquinones.github.io/virtual-closet/';
+
+  // Bookmarklet body — written as a string for the javascript: URL. Same
+  // hand-rolled escaping style as cartimport-r1.js.
+  var BMK = ''
+    + "(function(){"
+    + "function txt(el,sels){if(!el)return '';for(var i=0;i<sels.length;i++){var n=el.querySelector(sels[i]);if(n){var t=(n.textContent||'').trim();if(t)return t;}}return '';}"
+    + "function abs(u,base){if(!u)return '';try{return new URL(u,base||location.href).href;}catch(_){return u;}}"
+    + "function priceOf(s){if(!s)return null;var m=String(s).replace(/[^\\d.,]/g,'').replace(/,/g,'');var n=parseFloat(m);return isNaN(n)?null:n;}"
+
+    // Brand dictionary — keyed by lowercased substring that appears in
+    // sender domain, subject line, or page text. Order matters only for
+    // ambiguous prefixes (none here).
+    + "var BRANDS={lululemon:'Lululemon',vuori:'Vuori',aloyoga:'Alo Yoga','alo yoga':'Alo Yoga',patagonia:'Patagonia','rei.com':'REI',athleta:'Athleta','ae.com':'American Eagle','american eagle':'American Eagle',aerie:'Aerie',varley:'Varley',amazon:'Amazon',nordstrom:'Nordstrom',zara:'Zara','h&m':'H&M',hm:'H&M',target:'Target',walmart:'Walmart','macys':'Macy\\'s','macy\\'s':'Macy\\'s',saks:'Saks',revolve:'Revolve','free people':'Free People','urban outfitters':'Urban Outfitters',anthropologie:'Anthropologie',madewell:'Madewell','j.crew':'J.Crew',jcrew:'J.Crew','banana republic':'Banana Republic',gap:'Gap','old navy':'Old Navy',oldnavy:'Old Navy',uniqlo:'Uniqlo',asos:'ASOS',shopbop:'Shopbop',ssense:'SSENSE',farfetch:'Farfetch','net-a-porter':'Net-a-Porter',sephora:'Sephora',ulta:'Ulta','victoria\\'s secret':'Victoria\\'s Secret','fabletics':'Fabletics','outdoor voices':'Outdoor Voices','everlane':'Everlane','reformation':'Reformation','levi':'Levi\\'s','levis':'Levi\\'s'};"
+
+    // Find a list of DOM scopes (Documents or Elements) where the email body
+    // likely lives. Outlook reading pane is an iframe with srcdoc; we also
+    // try common selectors as a fallback.
+    + "function gatherScopes(){"
+    +   "var scopes=[];"
+    +   "var iframes=document.querySelectorAll('iframe');"
+    +   "for(var i=0;i<iframes.length;i++){"
+    +     "try{var d=iframes[i].contentDocument;if(d&&d.body&&d.body.querySelector('img')&&d.body.querySelectorAll('*').length>5){scopes.push(d.body);}}catch(_){}"
+    +   "}"
+    +   "var sels=['[role=\"document\"]','[role=\"region\"][aria-label*=\"message body\" i]','div[aria-label*=\"message body\" i]','div[id*=\"ReadingPane\" i]','div[class*=\"readingPane\" i]','div[class*=\"messageBody\" i]','[data-app-section*=\"message\" i]'];"
+    +   "for(var j=0;j<sels.length;j++){var els=document.querySelectorAll(sels[j]);for(var k=0;k<els.length;k++){if(els[k].querySelector('img')&&els[k].querySelectorAll('*').length>5){scopes.push(els[k]);}}}"
+    +   "if(scopes.length===0)scopes.push(document.body);"
+    +   "return scopes;"
+    + "}"
+
+    // Brand detection — scan a small set of header-y text first (subject,
+    // sender), then fall back to a bounded slice of the full page text.
+    + "function detectBrand(){"
+    +   "var hdr='';"
+    +   "var subjEl=document.querySelector('[role=\"heading\"][aria-level=\"1\"], [role=\"heading\"][aria-level=\"2\"], [aria-label*=\"subject\" i]');"
+    +   "if(subjEl)hdr+=' '+(subjEl.textContent||'');"
+    +   "var fromEls=document.querySelectorAll('[aria-label*=\"sender\" i],[aria-label*=\"from\" i],a[href^=\"mailto:\"],span[title*=\"@\"]');"
+    +   "for(var i=0;i<Math.min(fromEls.length,8);i++){hdr+=' '+(fromEls[i].textContent||'')+' '+(fromEls[i].getAttribute('href')||'')+' '+(fromEls[i].getAttribute('title')||'');}"
+    +   "hdr=hdr.toLowerCase();"
+    +   "for(var k in BRANDS){if(hdr.indexOf(k)>-1)return BRANDS[k];}"
+    +   "var tail=(document.body.textContent||'').toLowerCase().slice(0,8000);"
+    +   "for(var k2 in BRANDS){if(tail.indexOf(k2)>-1)return BRANDS[k2];}"
+    +   "return '';"
+    + "}"
+
+    // Try to derive a clean item name from a candidate row element.
+    + "function extractName(el){"
+    +   "var n=txt(el,['h1','h2','h3','h4','h5','a','[class*=\"title\"]','[class*=\"name\"]','[class*=\"product\"]','strong','b']);"
+    +   "if(n&&n.length<160)return n.replace(/\\s+/g,' ').trim();"
+    +   "var nodes=el.querySelectorAll('span,div,p,td');"
+    +   "for(var i=0;i<nodes.length;i++){var t=(nodes[i].textContent||'').trim();if(t.length>3&&t.length<120&&!t.match(/^\\$/)&&!t.match(/^(XS|XXS|S|M|L|XL|XXL|XXXL|\\d+)$/i)&&!t.match(/^(color|size|qty|quantity|order|item|total|subtotal|shipping|tax|price)/i)){return t.replace(/\\s+/g,' ').trim();}}"
+    +   "return '';"
+    + "}"
+
+    + "var brand=detectBrand();"
+    + "var scopes=gatherScopes();"
+    + "var items=[];"
+    + "var seen=new Set();"
+    + "for(var s=0;s<scopes.length;s++){"
+    +   "var scope=scopes[s];"
+    +   "var baseDoc=scope.ownerDocument||document;"
+    +   "var baseUrl=(baseDoc&&baseDoc.location&&baseDoc.location.href)||location.href;"
+    +   "var all=scope.querySelectorAll('*');"
+    +   "for(var i=0;i<all.length;i++){"
+    +     "var el=all[i];"
+    +     "var img=el.querySelector('img');"
+    +     "var pm=(el.textContent||'').match(/\\$\\d{1,4}(?:[,.]\\d{2,3})*\\.\\d{2}/);"
+    +     "if(!img||!pm)continue;"
+    // Drop containers that wrap another image+price element — keep the leaf.
+    +     "var hasNested=false;"
+    +     "for(var c=0;c<el.children.length;c++){var ch=el.children[c];if(ch.querySelector&&ch.querySelector('img')&&(ch.textContent||'').match(/\\$\\d{1,4}(?:[,.]\\d{2,3})*\\.\\d{2}/)){hasNested=true;break;}}"
+    +     "if(hasNested)continue;"
+    +     "var p=el.parentElement;var skip=false;while(p){if(seen.has(p)){skip=true;break;}p=p.parentElement;}"
+    +     "if(skip)continue;"
+    +     "seen.add(el);"
+    +     "var name=extractName(el);"
+    +     "if(!name)continue;"
+    +     "var imgSrc=img.getAttribute('src')||img.getAttribute('data-src')||img.getAttribute('data-original-src')||'';"
+    +     "var hrefEl=el.querySelector('a[href]');"
+    +     "var href=hrefEl?hrefEl.getAttribute('href'):'';"
+    +     "items.push({"
+    +       "name:name,"
+    +       "brand:brand,"
+    +       "color:txt(el,['[class*=\"color\"]','[class*=\"variant\"]','[class*=\"option\"]']),"
+    +       "size:txt(el,['[class*=\"size\"]']),"
+    +       "price:priceOf(pm[0]),"
+    +       "url:abs(href,baseUrl),"
+    +       "imageUrl:abs(imgSrc,baseUrl)"
+    +     "});"
+    +   "}"
+    + "}"
+
+    + "if(items.length===0){alert('No order items detected. Make sure you have an order confirmation email open with the body visible.');return;}"
+    + "if(items.length>25)items=items.slice(0,25);"
+    + "try{var payload=btoa(unescape(encodeURIComponent(JSON.stringify(items))));"
+    // URL-encode the payload so '+' chars in base64 don't get turned into
+    // spaces by URLSearchParams on the receiving end.
+    + "window.open('" + CLOSET_URL + "#/closet?orderImport='+encodeURIComponent(payload),'_blank');}"
+    + "catch(e){alert('Failed to encode order: '+e.message);}"
+    + "})();";
+
+  var BOOKMARKLET_HREF = 'javascript:' + encodeURIComponent(BMK);
+
+  async function render(main) {
+    main = main || document.getElementById('main');
+    if (!main) return;
+    main.innerHTML = ''
+      + '<div class="page-header">'
+      +   '<div class="page-title-group">'
+      +     '<h1>Email Order Importer</h1>'
+      +     '<div class="page-subtitle">Bookmarklet · scan an open order email, drop items into your closet</div>'
+      +   '</div>'
+      + '</div>'
+
+      + '<div class="card" style="padding: 18px 22px; margin-bottom: 18px;">'
+      +   '<h2 style="margin: 0 0 10px; font-family: \'Playfair Display\', serif; font-size: 22px;">One-time setup (1 minute)</h2>'
+      +   '<ol style="font-size: 14px; line-height: 1.8; padding-left: 22px; margin: 0;">'
+      +     '<li><strong>Show your bookmarks bar</strong> — Chrome/Edge: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> (Mac: <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).</li>'
+      +     '<li><strong>Drag</strong> this button onto your bookmarks bar (don\'t click — drag):'
+      +       '<div style="margin: 12px 0 4px;">'
+      +         '<a href="' + BOOKMARKLET_HREF + '" class="btn btn-primary" id="emailBookmarkletBtn" onclick="event.preventDefault(); alert(\'Don\\\'t click — DRAG this button to your bookmarks bar.\'); return false;" style="cursor: grab; padding: 10px 18px; font-size: 14px;">📧 Order → Closet</a>'
+      +       '</div>'
+      +     '</li>'
+      +     '<li>Open an order confirmation email in Outlook on the web (outlook.live.com or outlook.office.com) — make sure the email body is visible in the reading pane.</li>'
+      +     '<li>Click the bookmark → a new tab opens at your closet → confirm the import → done.</li>'
+      +   '</ol>'
+      + '</div>'
+
+      + '<div class="card" style="padding: 16px 20px; margin-bottom: 18px;">'
+      +   '<h3 style="margin: 0 0 8px; font-size: 15px;">How it works</h3>'
+      +   '<div class="muted" style="font-size: 13px; line-height: 1.55;">The bookmarklet looks at the email body that\'s currently open and finds rows that contain <em>both</em> a product image and a $XX.XX price. The brand is auto-detected from the sender, subject, or page text. Items go straight into your closet (not your wishlist) because order confirmations are already paid for. If something isn\'t right after import, just edit the closet item — the price and date are easy to fix.</div>'
+      + '</div>'
+
+      + '<div class="card" style="padding: 16px 20px; margin-bottom: 18px;">'
+      +   '<h3 style="margin: 0 0 8px; font-size: 15px;">Tips</h3>'
+      +   '<ul style="font-size: 13px; line-height: 1.6; padding-left: 22px; margin: 0;">'
+      +     '<li>Works best on retailer-sent confirmation emails (Lululemon, Varley, Vuori, Nordstrom, Anthropologie, etc.). Marketing emails with carousels of unrelated products may pull in items you didn\'t buy.</li>'
+      +     '<li>If the bookmarklet pulls in too much (recommendations, footer ads, etc.), you can delete the extras from your closet right after import.</li>'
+      +     '<li>Gmail (mail.google.com) also works — same bookmarklet, no extra setup.</li>'
+      +     '<li>Native Outlook desktop / phone app is <strong>not</strong> supported — only the browser version. Open the email at outlook.live.com first.</li>'
+      +   '</ul>'
+      + '</div>'
+
+      + '<div class="card" style="padding: 16px 20px;">'
+      +   '<h3 style="margin: 0 0 8px; font-size: 15px;">Coming later</h3>'
+      +   '<div class="muted" style="font-size: 13px; line-height: 1.55;">A real forwarding address (forward your order email to closet@…). That requires a tiny server — it\'s on the roadmap.</div>'
+      + '</div>';
+  }
+
+  window.renderEmailImportView = function(main) { return render(main); };
+
+  function maybeRender() {
+    if (location.hash === '#/email-import') render(document.getElementById('main'));
   }
   window.addEventListener('hashchange', maybeRender);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', maybeRender);

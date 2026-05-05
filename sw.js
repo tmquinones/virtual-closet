@@ -1,7 +1,7 @@
 // sw.js — Virtual Closet service worker
 // Caches the shell + JS/CSS for offline use. Bumps on each release via CACHE_NAME.
 
-const CACHE_NAME = 'virtual-closet-v31';
+const CACHE_NAME = 'virtual-closet-v33';
 const SHELL = [
   './',
   './index.html',
