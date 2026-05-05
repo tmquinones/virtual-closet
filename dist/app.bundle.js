@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-05 13:16:35 */
+/* Virtual Closet bundle — built 2026-05-05 19:42:02 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -9226,6 +9226,18 @@ function rotationDayHtml(day) {
 // slideshow-r1.js — Monthly wear log slideshow at #/slideshow
 
 (function() {
+  // Two views: 'photo' (selfie/photo cover) and 'items' (grid of pieces worn).
+  // Persists per-device. Defaults to 'photo' for back-compat with existing logs.
+  function getView() {
+    try {
+      const v = localStorage.getItem('vc:wearlogView');
+      return v === 'items' ? 'items' : 'photo';
+    } catch (_) { return 'photo'; }
+  }
+  function setView(v) {
+    try { localStorage.setItem('vc:wearlogView', v); } catch (_) {}
+  }
+
   // Coerce any date-ish value to YYYY-MM-DD or empty.
   function toIsoDate(d) {
     if (!d) return '';
@@ -9306,13 +9318,21 @@ function rotationDayHtml(day) {
     }
     const monthList = [...months.entries()].sort((a, b) => String(b[0] || '').localeCompare(String(a[0] || '')));
 
+    const view = getView();
+
     main.innerHTML = `
       <div class="page-header">
         <div class="page-title-group">
           <h1>Wear Log</h1>
           <div class="page-subtitle">${dayList.length} day${dayList.length === 1 ? '' : 's'} on record · grouped by month</div>
         </div>
-        <a class="btn btn-primary" href="#/daily">+ Log a day</a>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <div class="view-toggle" role="tablist" aria-label="View mode">
+            <button type="button" class="view-toggle-btn ${view === 'photo' ? 'active' : ''}" data-view="photo">Photos</button>
+            <button type="button" class="view-toggle-btn ${view === 'items' ? 'active' : ''}" data-view="items">Items</button>
+          </div>
+          <a class="btn btn-primary" href="#/daily">+ Log a day</a>
+        </div>
       </div>
 
       ${monthList.length === 0 ? `
@@ -9324,12 +9344,22 @@ function rotationDayHtml(day) {
       ` : monthList.map(([ym, list]) => `
         <section class="slideshow-month">
           <h2 class="slideshow-month-title">${escapeHtml(monthLabel(ym))} <span class="muted" style="font-size: 12px; margin-left: 8px;">${list.length} day${list.length === 1 ? '' : 's'}</span></h2>
-          <div class="slideshow-row">
-            ${list.map(d => slideCardHtml(d, itemMap)).join('')}
+          <div class="${view === 'items' ? 'wearlog-items-grid' : 'slideshow-row'}">
+            ${list.map(d => view === 'items' ? itemsCardHtml(d, itemMap) : slideCardHtml(d, itemMap)).join('')}
           </div>
         </section>
       `).join('')}
     `;
+
+    // View toggle
+    main.querySelectorAll('.view-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const v = btn.dataset.view;
+        if (v === getView()) return;
+        setView(v);
+        render(main);
+      });
+    });
 
     main.querySelectorAll('[data-slide-day]').forEach(card => {
       card.addEventListener('click', () => {
@@ -9340,13 +9370,13 @@ function rotationDayHtml(day) {
     });
   }
 
+  // Photo-first card (existing behavior — collage fallback when no day-photo)
   function slideCardHtml(day, itemMap) {
     const url = day.photo ? blobToUrl(day.photo) : '';
     const ids = [...day.itemIds];
     const previewItems = ids.slice(0, 4).map(id => itemMap.get(id)).filter(Boolean);
     const dateLabel = fmtDay(day.date) || 'Undated';
 
-    // Cover: real day-photo if uploaded, otherwise a collage of item thumbs
     let coverHtml;
     if (url) {
       coverHtml = `<div class="slide-cover" style="background-image: url('${url}');"></div>`;
@@ -9370,6 +9400,36 @@ function rotationDayHtml(day) {
           <div class="slide-piece-count muted">${ids.length} piece${ids.length === 1 ? '' : 's'}</div>
         </div>
       </div>
+    `;
+  }
+
+  // Items-first card — date header + grid of pieces, no photo
+  function itemsCardHtml(day, itemMap) {
+    const ids = [...day.itemIds];
+    const items = ids.map(id => itemMap.get(id)).filter(Boolean);
+    const dateLabel = fmtDay(day.date) || 'Undated';
+
+    const itemTiles = items.map(it => {
+      const u = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
+      const meta = [it.brand, it.color].filter(Boolean).join(' · ');
+      return `
+        <div class="wearlog-item-tile">
+          <div class="wearlog-item-thumb" style="${u ? `background-image:url('${u}')` : 'background:var(--bg-muted, #f3f3f3);'}"></div>
+          <div class="wearlog-item-name">${escapeHtml(it.name || it.subtype || 'Untitled')}</div>
+          ${meta ? `<div class="wearlog-item-meta muted">${escapeHtml(meta)}</div>` : ''}
+        </div>
+      `;
+    }).join('') || '<div class="muted" style="padding:14px;">No pieces tagged.</div>';
+
+    return `
+      <article class="wearlog-items-card" data-slide-day="${escapeHtml(day.date)}">
+        <header class="wearlog-items-head">
+          <div class="wearlog-items-date">${escapeHtml(dateLabel)}</div>
+          ${day.caption ? `<div class="wearlog-items-caption muted">${escapeHtml(day.caption)}</div>` : ''}
+          <div class="wearlog-items-count muted">${items.length} piece${items.length === 1 ? '' : 's'}</div>
+        </header>
+        <div class="wearlog-items-tiles">${itemTiles}</div>
+      </article>
     `;
   }
 

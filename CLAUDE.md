@@ -21,21 +21,89 @@ storage, deployed to GitHub Pages at
 serves is `hugo-site/` inside this folder. Everything outside `hugo-site/`
 is the *source* working copy; deploys are a sync + push.
 
-**Last shipped (2026-05-01 night session):**
-- Bundle: `dist/app.bundle.js?v=1777689986624`
-- Service worker cache: `virtual-closet-v31`
-- Auth-gate stash for cart-import (don't write to guest DB before signin)
-- Defensive try/catch around `_handleCartImportParam` so a bad payload
-  cannot blank the wishlist page
-- **Critical fix:** restored `window.renderWishlistView = ...` export in
-  `js/wishlist-r6.js` — it had been dropped by an Edit-tool truncation,
-  which is why the wishlist was rendering as a blank screen even after the
-  bundle was up-to-date.
+**Last shipped (2026-05-05 — v35 patch, subsumes uncommitted v34):**
+- Bundle: `dist/app.bundle.js?v=1777986950586` (40 sources, 480 KB)
+- Service worker cache: `virtual-closet-v35`
+- **Email importer dedupe hardened** — now checks imageUrl AND a
+  name+price+size+color tuple. Outlook serves the same logical item with
+  different imageUrl across iframe vs parent-doc scopes; tuple check
+  collapses those.
+- **Cart importer hardened** (`js/cartimport-r1.js`):
+  - Same imageUrl-or-tuple dedupe as the email importer.
+  - `widgetRe` filter drops payment / chat / promo tiles (Apple Pay,
+    Google Pay, Klarna, "Sam's Club", "Powered by", etc.).
+  - Tiny-image filter (`img.naturalWidth < 60`) drops icons and payment
+    glyphs.
+  - Expanded "stop scanning" heading regex catches Alo's "Pair it with"
+    and similar recommendation-block headings.
+  - URL-encoded payload (same `+` fix the email importer got in v34).
+- **Pre-existing receipts-r1.js duplicate trailing block fixed** — was
+  blocking the bundle build. Same Edit-tool footgun pattern as the
+  earlier slideshow-r1.js fix.
+- v34's content (MARKETPLACES, cleanName, hennes, _inferOrderCategory,
+  Purchased button, etc.) is rolled forward into v35 since v34 was never
+  pushed to GitHub. One DEPLOY.ps1 push ships everything.
 
-**Last user signal of the night:** console screenshot showed only the
-`apple-mobile-web-app-capable` deprecation warning and a `favicon.ico` 404 —
-**no JS errors**. We did not yet confirm the cart import end-to-end on the
-live site after the v31 push.
+**Last actually deployed to live (2026-05-04 — v33):**
+Just the Receipts-page link patch (📧 Import from email button). The big
+import-quality fixes (dedupe, marketplace, cleanName, brand fix, category
+inference) were built as v34 but never pushed — they're folded into v35
+above and ship in the next DEPLOY.ps1 push.
+
+**Older shipped before that (2026-05-04 — v32):**
+- Initial Email Importer module (`js/emailimport-r1.js`), Purchased button
+  on wishlist (`js/wishlist-r6.js`), and closet `_handleOrderImportParam`
+  receiver. No dedupe, no marketplace detection, no cleanName — those
+  came in v34/v35. See PROJECT-LOG.md for the full v32 entry.
+
+**On deck — Option C (next session, v36):**
+Per-item `totalPaid` field for tracking actual amount paid (item price +
+shipping + tax + marketplace fee). User asked for this after a Poshmark
+$14 item actually cost $23.44 with fees. Schema + edit form + email
+importer to capture "Total: $X.XX" + Receipts/Insights to use `totalPaid`.
+
+---
+
+## Outdated content from earlier v32 description (kept for reference)
+
+The list below was the original v32 ship notes; many items are still
+accurate but the bookmarklet behavior has been substantially updated
+in v34/v35 and is described above. Skim this only if you need historical
+context on the initial wiring.
+
+- **Receipts page surfaces the Email Importer** — `js/receipts-r1.js`
+  has a `📧 Import from email` button + link.
+- **Email Order Importer** — new module `js/emailimport-r1.js`, setup page
+  at `#/email-import`. Bookmarklet "📧 Order → Closet" scans an open Outlook
+  or Gmail order-confirmation email and fires items into the **closet**
+  (not the wishlist) via `#/closet?orderImport=…`.
+- **Purchased button on wishlist rows** — `js/wishlist-r6.js` now has a
+  `[data-purchased]` button next to Edit/Delete. Click → `_purchaseFlow`
+  modal asks for price + date → `dbAddItem` to closet, `dbDeleteWishlistItem`
+  removes the wishlist row.
+- **`_handleOrderImportParam` receiver** in `js/closet-r10.js` — same
+  auth-gate stash pattern as the cart-import handler, wrapped in try/catch
+  so a malformed payload can't blank the closet.
+- **Signin handoff for orderImport** in `js/app-r10.js` — same as the
+  pre-existing cart-import handoff but routes to `#/closet`.
+- **`'email-import'` route** added to `ROUTES` in `js/app-r10.js` and a
+  matching sidebar nav entry in `index.html` (📧 Email Importer).
+- **Pre-existing bug fixed in passing:** `js/slideshow-r1.js` had a
+  duplicated trailing block (lines 192–201) that would have failed
+  `node --check` on the bundle. Truncated to single clean tail at line 191.
+
+**Last shipped before that (2026-05-01):**
+- Bundle: `dist/app.bundle.js?v=1777689986624`, cache `virtual-closet-v31`
+- Auth-gate stash for cart-import + defensive try/catch + restored
+  `window.renderWishlistView` export after Edit-tool truncation.
+
+**Untested on live:** the email-import flow and the Purchased button were
+shipped to source + bundle on 2026-05-04 but **not yet pushed**. After
+the user runs `.\DEPLOY.ps1 "..."` and clears the service worker, both
+should be exercised end-to-end against:
+- A real Outlook (or Gmail) order confirmation email — varley, lululemon,
+  vuori, etc.
+- An existing wishlist row → ✓ Purchased → confirm modal.
 
 ---
 
@@ -63,24 +131,46 @@ she's interested in — keep them safe.
 
 ---
 
+## Test results from the v35 deploy (live)
+
+| Scenario | Result |
+|---|---|
+| Poshmark Vuori sports-bra email → email importer | 1 item (was 4) ✓ Brand blank ✓ Name `black sports bra with removable pads` clean ✓ Category Intimates → Sports bra ✓ Price $14 ✓ Date today ✓ Photo present ✓ |
+| Alo Yoga order email → email importer | 3 real items ($148 dress, $128 dress, $78 skirt) ✓ + 1 Outlook in-app ad ($31.38) — Outlook ads not yet in widget filter |
+| Wishlist Purchased button | Working — quick price + date modal, item moves to closet, wishlist row removed |
+| Receipts page | New `📧 Import from email` button visible in header |
+
+---
+
 ## First things to do in the morning
 
-1. Ask Tiffany whether the wishlist now renders and whether the bookmarklet
-   import successfully landed items in her `@tiffany` closet on the live
-   site. The expected flow:
-   - Click the `+ Add to Closet` bookmark on a Varley / Lululemon / etc. cart
-   - New tab opens at `…#/wishlist?cartImport=…`
-   - She is signed in (session preserved) → the wishlist page paints,
-     prompts to import N items, she clicks OK, items land in her wishlist,
-     `?cartImport=…` strips out of the URL.
-2. If anything is still off, have her open DevTools (F12) → Console and
-   look for `cartImport handler crashed:` — that's the safety-net log line.
-3. **Two quick cosmetic console items** still pending:
-   - Add `<meta name="mobile-web-app-capable" content="yes">` next to the
-     existing `apple-mobile-web-app-capable` in `index.html` (silences the
-     deprecation warning)
-   - Add a tiny `favicon.ico` (or a `<link rel="icon" href="data:,">` to
-     suppress the 404)
+### 1. Cleanup: remove bogus rows from failed v32–v33 imports
+
+Tiffany has these stray rows from before the v34/v35 hardening landed:
+- Four "H&M" sports-bra rows (actually one Vuori bra — pre-marketplace-detect)
+- Duplicate Alosoft Encore dresses + Airbrush skirts on the wishlist
+- "SC☐Sam's Club☐☐☐☐" garbage row (Alo's payment promo tile)
+- Vuori Halo Essential Wideleg Pant — scraped from Alo's recommendations,
+  she never bought it
+- Microsoft Outlook ad row from the latest Alo email import (if she clicked
+  OK on the v35 popup before the v36 ad filter ships)
+
+These are best deleted manually from the closet/wishlist UI, not via code.
+
+### 2. Test more retailer emails on the v35 importer
+
+Run a Lululemon, Vuori-direct, and Varley order confirmation through the
+email importer. Note any wrong fields — they become the v36 test cases.
+
+### 3. Build v36 (next deploy — see "v36 plan" below)
+
+### 4. Stretch — two cosmetic console items
+
+- Add `<meta name="mobile-web-app-capable" content="yes">` next to the
+  existing `apple-mobile-web-app-capable` in `index.html` (silences the
+  deprecation warning).
+- Add a tiny `favicon.ico` (or a `<link rel="icon" href="data:,">` to
+  suppress the 404).
 
 ---
 
@@ -110,6 +200,20 @@ she's interested in — keep them safe.
   (Application → Service Workers → Unregister + Storage → Clear site data,
   IndexedDB checkbox **OFF** so her closet stays). Plain Ctrl+Shift+R is
   not enough because the SW intercepts the bundle request.
+- **Bookmarklet refresh after any change to `cartimport-r1.js` or
+  `emailimport-r1.js`:** the `javascript:…` URL is frozen at the moment it's
+  dragged onto the bookmarks bar. A deploy alone doesn't update existing
+  bookmarks. After patches that touch either bookmarklet body, instruct
+  Tiffany to right-click the old bookmark → Delete, then re-drag the
+  button from `#/cart-import` or `#/email-import`.
+- **Version-check truth source** — paste this into the browser DevTools
+  Console after any deploy to confirm the new bundle is live:
+  ```js
+  document.querySelector('script[src*="app.bundle"]').src
+  ```
+  The `?v=` timestamp must match the one set in `index.html` for the patch
+  you just shipped. If it doesn't, either the push didn't go through or the
+  service worker is still serving the old version.
 
 ### Bundle build template (paste-ready)
 
@@ -127,7 +231,7 @@ SOURCES = ['js/data-r9.js','js/utils-r1.js','js/colorpick-r1.js','js/auth-r1.js'
 'js/girlmath-r3.js','js/trip-r1.js','js/compare-r1.js','js/outfit-feedback-r1.js','js/flatlay-r1.js',
 'js/ratings-r1.js','js/capsule-r1.js','js/returned-r1.js','js/daily-r1.js','js/slideshow-r1.js',
 'js/notes-r1.js','js/receipts-r1.js','js/returns-due-r1.js','js/shop-r1.js','js/top10-r1.js',
-'js/cartimport-r1.js','js/fit-r1.js','js/theme-r2.js','js/github-sync-r1.js']
+'js/cartimport-r1.js','js/emailimport-r1.js','js/fit-r1.js','js/theme-r2.js','js/github-sync-r1.js']
 out = [f'/* Virtual Closet bundle — built {time.strftime("%Y-%m-%d %H:%M:%S")} */',
        f'/* Sources (in order): {", ".join(SOURCES)} */', '']
 for rel in SOURCES:
@@ -239,7 +343,63 @@ Virtual Closet/                          ← project root (source-of-truth)
 
 ---
 
-## Things on deck (after the cart-import is verified working)
+## v36 plan (next deploy — bundle as one push)
+
+### A. Outlook ad filter (small)
+
+Add to the email importer's `widgetRe` filter:
+`microsoft outlook`, `upgrade your account`, `premium outlook`,
+`outlook premium`. This catches the Microsoft Outlook in-app promotional
+banner that leaked into Tiffany's Alo email import as a `$31.38` row.
+
+### B. Per-item `totalPaid` — Option C (the meaty change)
+
+Tiffany flagged that her Poshmark `$14.00` sports bra actually cost
+`$23.44` total ($14 item + $5.99 shipping + $2.05 tax + $1.40 marketplace
+fee). The closet currently has only one price field, which is ambiguous
+("did she pay $14 or $23?").
+
+- New optional `totalPaid` field on closet items. Existing `purchasePrice`
+  keeps the item-listed price untouched.
+- **Email importer** — parse the `Total: $X.XX` line from the email body
+  and capture it into `totalPaid`. Falls back to `null` when no clear
+  total is found.
+- **Item edit form** — new "Total paid (with shipping/tax/fees)" field
+  directly under "Purchase Price".
+- **Wishlist Purchased modal** — same field, prefilled to match the price
+  the user just typed.
+- **Receipts page header total** — switch to summing `totalPaid` (falling
+  back to `purchasePrice` for items that don't have one yet).
+- **Insights / Girl Math / cost-per-wear** — switch to `totalPaid` for
+  true-cost calculations.
+- **One-time backfill** — for items where `totalPaid` is blank, set
+  `totalPaid = purchasePrice`. Without this the Receipts running total
+  drops to near-zero on first load after the patch.
+
+### Other smaller items
 
 - Cart-import name extraction is greedy — on Varley the captured `name`
-  field incl
+  field once included color + size + price + UI text concatenated (e.g.
+  `"Davidson Sweat Color: Olive Marl Size: XS $138.00 Move to wishlist"`).
+  v34's `cleanName` post-processor handles most of this, but Varley should
+  still be re-tested after v35 to confirm.
+- See `WORK-TODO.md` for the longer backlog (mobile app conversion, more
+  brand support for cart-import, etc.).
+
+---
+
+## User context
+
+- **Tiffany Foster** (`tmquinones` on GitHub, `cqtq2025@gmail.com`).
+- Pre-fill her username in URLs / `gh` commands.
+- She's not a developer. Keep guidance terse and concrete: exact PowerShell
+  commands, exact button labels, exact paths. Avoid jargon.
+- She runs commands from PowerShell. JS goes in DevTools console (F12),
+  **not** PowerShell.
+- Her DevTools may show "Don't paste code into the DevTools Console..." —
+  she can type `allow pasting` once to unlock it.
+
+---
+
+_Last updated: 2026-05-05 — end of v35 ship + v36 planning session
+(email importer, cart importer hardening, Purchased button, Receipts wiring)._
