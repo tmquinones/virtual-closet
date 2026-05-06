@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-06 15:40:48 */
+/* Virtual Closet bundle — built 2026-05-06 16:06:37 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/photo-suggest-r1.js */
 
 
@@ -131,16 +131,16 @@ const COLOR_ALIASES = {
   'Blue Gingham': 'Blue',
   'Mini Filigree Lace True Navy': 'Navy',
   // Pinks
-  'Sunset Pink': 'Light Pink',
+  'Sunset Pink': 'Hot Pink',          // photos read clearly bright pink, not pastel
   'Berry Rumble': 'Pink',
   'Neon Bubblegum': 'Hot Pink',
   'Sonic Pink': 'Hot Pink',
   'Pink Lemonade': 'Pink',
   'Ballet Pink': 'Light Pink',
   'Pink Summer Crush': 'Pink',
-  'Pink Red Floral': 'Pink',
+  'Pink Red Floral': 'Multi',         // multi-print floral
   'Rose Water': 'Pink',
-  'Fuchsia Marigold Tie-Dye': 'Fuchsia',
+  'Fuchsia Marigold Tie-Dye': 'Multi',// multi-color tie-dye, not a single fuchsia
   // Purples
   'Smoky Quartz': 'Mauve',
   'Faint Lavender': 'Lavender',
@@ -149,28 +149,29 @@ const COLOR_ALIASES = {
   'Dusty Purple Lilac': 'Lilac',
   'Plum Kiss': 'Plum',
   'Goodnight Plum': 'Plum',
-  'Sour Grape/White/Green': 'Grape',
+  'Sour Grape/White/Green': 'Multi',  // was 'Grape' — three-tone print
   // Reds / Burgundies
-  'Black Plum': 'Burgundy',
+  'Black Plum': 'Plum',               // was 'Burgundy' — photos are plum-purple
   'Bright Red': 'Red',
-  'Sangria': 'Burgundy',
+  'Sangria': 'Wine',                  // was 'Burgundy' — photos read purple-wine
   // Greens / Teals
   'Dark Jade': 'Emerald',
-  'Lime': 'Mint',
-  'Martini Print': 'Mint',
+  'Jade': 'Emerald',
+  'Lime': 'Neon Green',               // was 'Mint' — lime is bright yellow-green
+  'Martini Print': 'Multi',           // was 'Mint' — print, not a single mint color
   'Teal/Deep Marina': 'Teal',
   'Teal Pattern': 'Teal',
   // Yellows
-  'Yellow Ditsy Floral': 'Yellow',
+  'Yellow Ditsy Floral': 'Multi',     // ditsy = multi-print
   // Neutrals
   'Bone': 'Cream',
   'Chia/Brown': 'Brown',
-  'Jade Grey': 'Gray',
+  'Jade Grey': 'Sage',                // was 'Gray' — photos read sage-green
   'Mauve Grey': 'Mauve',
   'White Heather': 'White',
   'Pearl': 'White',
-  'Gravel': 'Gray',
-  'Furry Taupe': 'Tan',
+  'Gravel': 'Tan',                    // was 'Gray' — Alo Yoga Gravel reads khaki/tan
+  'Furry Taupe': 'Mauve',             // was 'Tan' — Patagonia Furry Taupe is mauve+rose
   'Sierra Taupe': 'Tan',
   'Chino Beige': 'Beige',
   'New off White': 'Cream',
@@ -179,11 +180,13 @@ const COLOR_ALIASES = {
   'Silver/White': 'Silver',
   'Oxygen White': 'White',
   'Vapor Blue/White/Coral Blush': 'Multi',
-  'Ink': 'Black',
-  'Jet': 'Black',
+  // Note: 'Jet' and 'Ink' are NOT aliased here. On Vuori specifically these
+  // names are used for navy garments, on other brands they're true black.
+  // Leaving them un-aliased lets photo derivation pick the right canonical
+  // bucket for each individual item.
   'Black Marble': 'Black',
   'Onyx Black Marble': 'Black',
-  'Black Neon Floral': 'Black',
+  'Black Neon Floral': 'Multi',       // was 'Black' — neon floral has bright accents
 };
 
 // Resolve a possibly-brand color name to its canonical palette color.
@@ -202,6 +205,35 @@ function familyForColor(name) {
     if (list.includes(name)) return family;
   }
   return name === 'Multi' ? 'Special' : 'Other';
+}
+
+// Single source of truth for "which canonical palette bucket does this item
+// belong in?" Used by the Insights → Colors chart, the closet color filter,
+// and anywhere else we need to group items by color.
+//
+// Priority order:
+//   1. normalizeColor(item.color) — IF it resolves to a canonical palette
+//      name (in COLOR_HEX, directly or via COLOR_ALIASES). This is the
+//      user's explicit tag and is always trusted over photo guesses.
+//   2. item.paletteColor — photo-derived fallback for brand-specific names
+//      that don't normalize to a known canonical color.
+//   3. raw item.color — last resort so unknown free-text colors still
+//      appear in the legend instead of being silently dropped.
+//   4. '' — untagged.
+function effectivePaletteColor(item) {
+  if (!item) return '';
+  const raw = (item.color || '').trim();
+  const normalized = raw && (typeof normalizeColor === 'function')
+    ? normalizeColor(raw) : raw;
+  if (normalized && typeof COLOR_HEX === 'object' && COLOR_HEX
+      && Object.prototype.hasOwnProperty.call(COLOR_HEX, normalized)) {
+    return normalized;
+  }
+  if (item.paletteColor && (item.paletteColor + '').trim()) {
+    return (item.paletteColor + '').trim();
+  }
+  if (normalized) return normalized;
+  return '';
 }
 
 const ITEM_STATUSES = [
@@ -240,6 +272,8 @@ function isActiveItem(item) {
 function activeItems(items) {
   return (items || []).filter(isActiveItem);
 }
+
+
 
 
 /* ===== js/utils-r1.js ===== */
@@ -1782,7 +1816,7 @@ function filterAndSortItems(items) {
         if (i.color) return false;
       } else {
         const target = (typeof normalizeColor === 'function') ? normalizeColor(f.color) : f.color;
-        const candidate = (typeof normalizeColor === 'function') ? normalizeColor(i.color || '') : (i.color || '');
+        const candidate = (typeof effectivePaletteColor === 'function') ? effectivePaletteColor(i) : ((typeof normalizeColor === 'function') ? normalizeColor(i.color || '') : (i.color || ''));
         if (target !== candidate) return false;
       }
     }
@@ -3030,6 +3064,8 @@ async function reviewNext() {
     setTimeout(reviewNext, 80);
   });
 }
+
+
 
 
 
@@ -5677,16 +5713,13 @@ window.addEventListener('DOMContentLoaded', function () {
     let needSync = 0; // count of items with a non-canonical color + photo + no paletteColor
     const isCanonical = (name) => (typeof COLOR_HEX === 'object' && COLOR_HEX && Object.prototype.hasOwnProperty.call(COLOR_HEX, name));
     for (const i of items) {
+      // effectivePaletteColor (data-r9.js) is the single source of truth —
+      // same logic the closet filter uses, so click counts always match.
+      const c = (typeof effectivePaletteColor === 'function')
+        ? effectivePaletteColor(i)
+        : ((i.color || '').trim());
       const raw = (i.color || '').trim();
       const normalized = raw && (typeof normalizeColor === 'function') ? normalizeColor(raw) : raw;
-      let c = '';
-      if (normalized && isCanonical(normalized)) {
-        c = normalized;
-      } else if (i.paletteColor && (i.paletteColor + '').trim()) {
-        c = (i.paletteColor + '').trim();
-      } else if (normalized) {
-        c = normalized;
-      }
       // Suggest sync only for items where the user's color isn't canonical
       // AND we don't yet have a paletteColor — those are the ones the
       // photo-derived fallback would actually help.
@@ -6088,6 +6121,8 @@ window.addEventListener('DOMContentLoaded', function () {
     maybeRender();
   }
 })();
+
+
 
 
 /* ===== js/wishlist-r6.js ===== */

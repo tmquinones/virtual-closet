@@ -2116,4 +2116,76 @@ Three changes in v42:
    returns the highest-aggregate name — much more robust to noisy single
    clusters.
 3. **closet-r10.js — Add Item is conservative.** When the user types a
-   canonical color ("Black", "Navy", "Olive", etc.)
+   canonical color ("Black", "Navy", "Olive", etc.), no photo derivation
+   runs. The user's tag is trusted as-is. Photo derivation only fires for
+   non-canonical brand names, where it actually adds value.
+
+The Insights Sync button copy + filter were also updated to match —
+"could be re-categorized" only counts items whose user-supplied color
+isn't already canonical.
+
+**Bundle:** `dist/app.bundle.js?v=1778082071825` (41 sources, 507 KB).
+**Service worker:** `virtual-closet-v42`.
+
+After deploy, Tiffany should see Cream/White counts drop to the actual
+piece totals, and items with brand-specific names (Anthracite XS,
+Bluestone, Light Provence Blue) still get bucketed via paletteColor —
+just more accurately than v41's algorithm.
+
+The Edit-tool truncation footgun bit again on this ship: insights-r7.js,
+photo-suggest-r1.js, and closet-r10.js all came back from Edit calls
+with their tails chopped. Rebuilt all three from `head` + heredoc tail
++ (for closet-r10.js) extracting the original from the previous bundle's
+section markers. Worth a note that even the bundle is now a useful
+recovery source when the Edit tool eats a file.
+
+---
+
+### Phase 33 — v43: Click-through filter + alias fixes (2026-05-06)
+
+After v42 dropped, Tiffany walked through the buckets and flagged several
+mismatches that weren't pure photo-extraction noise — they were wrong
+**alias mappings** in `COLOR_ALIASES`. Plus, clicking the Light Blue
+slice showed "0 items" even though the legend said 2, because the closet
+filter and the chart used different logic.
+
+Three changes in v43:
+
+1. **`effectivePaletteColor(item)` helper in `data-r9.js`** — single
+   source of truth for "which canonical bucket does this item belong in?"
+   Both the Insights chart (`insights-r7.js`) and the closet color filter
+   (`closet-r10.js`) now call this same function. Click-through always
+   matches the count.
+2. **Alias remappings:** `Sunset Pink → Hot Pink`, `Jade Grey → Sage`,
+   `Sangria → Wine`, `Black Plum → Plum`, `Sour Grape/White/Green → Multi`,
+   `Lime → Neon Green`, `Furry Taupe → Mauve`, `Gravel → Tan`,
+   `Pink Red Floral → Multi`, `Fuchsia Marigold Tie-Dye → Multi`,
+   `Martini Print → Multi`, `Yellow Ditsy Floral → Multi`,
+   `Black Neon Floral → Multi`. All driven by what the actual photos
+   look like, not by literal-word interpretation.
+3. **Removed `Jet` and `Ink` aliases entirely.** On Vuori specifically
+   these names label navy garments, on other brands they're true black.
+   Leaving them un-aliased makes `effectivePaletteColor` fall through to
+   `paletteColor` (photo-derived) per item, which gets it right
+   individually. Users can still override by editing the item's color
+   directly to "Black" or "Navy".
+
+**Bundle:** `dist/app.bundle.js?v=1778083606168` (41 sources, 509 KB).
+**Service worker:** `virtual-closet-v43`.
+
+Same Edit-tool truncation footgun bit three files this session
+(`insights-r7.js`, `closet-r10.js`, `data-r9.js`). Recovery pattern that
+worked: restore from the most recent bundle's section markers (each
+source is delimited by `/* ===== js/<file> ===== */`), then re-apply the
+edit via Python's string replace instead of the Edit tool. The bundle
+is now reliable enough to use as a recovery source even if neither the
+project root nor `hugo-site/` has a clean copy.
+
+---
+
+## Outstanding items / things the user may want next
+
+- Pick a brand from slide 13 and update slides 1, 4, and 16 to match
+- Replace placeholder funding amount on slide 15 with a real number
+- Replace founder name "ChrTif" / initials "CT" / bio on slide 14
+- Continue adding the rest of the wardrobe — current impor
