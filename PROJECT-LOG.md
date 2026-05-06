@@ -86,6 +86,294 @@ Virtual Closet/
 
 ## Build log
 
+### 2026-05-05 — v35: harden email dedupe + cart importer fixes (subsumes v34)
+
+**Trigger:** user reported the email importer was *still* tripling items
+in the closet on a fresh Alo Yoga email, AND the cart importer on
+aloyoga.com produced duplicates + a "Sam's Club" garbage row + an unrelated
+Vuori pant. Diagnostic via DevTools console showed her live bundle was
+still `?v=1777946017709` (v33) — v34 had been built locally but never
+pushed. So none of v34's fixes were actually running.
+
+Decision: ship v35 as a single deploy that subsumes v34 + adds new
+cart-importer hardening + a stronger email-importer dedupe. One PowerShell
+push gets her caught up.
+
+**v35 fixes:**
+
+- `js/emailimport-r1.js` — strengthened dedupe.
+  - Old logic: dedupe by imageUrl OR (when imageUrl empty) by name+price.
+  - Failure mode: Outlook proxies images through different URLs in the
+    iframe (`srcdoc`) vs the parent doc's `[role="document"]` re-render,
+    so the same logical item gets a different imageUrl per scope and
+    survives dedupe.
+  - New logic: dedupe by imageUrl AND ALWAYS check a name+price+size+color
+    tuple. Either match → drop. Catches the multi-scope URL-mismatch case.
+
+- `js/cartimport-r1.js` — full hardening pass (the original module hadn't
+  had any of these fixes yet).
+  - **Dedupe** by imageUrl + name+price+size+color tuple, same as the
+    email importer.
+  - **Payment-widget filter** (`widgetRe`) — drops elements whose text
+    contains "apple pay", "google pay", "paypal", "klarna", "afterpay",
+    "affirm", "sezzle", "pay with", "sam's club", "powered by", "chat
+    with", "customer service", "need help", "live chat", "gift card",
+    "newsletter", etc. Kills the kind of false-positive cart row Tiffany
+    saw ("SC☐Sam's Club☐☐☐☐" from a payment promo tile).
+  - **Tiny-image filter** — skip elements where `img.naturalWidth < 60`
+    or `naturalHeight < 60` (icons, payment glyphs, chat avatars).
+    Guarded by `naturalWidth > 0` so unloaded images aren't penalized.
+  - **Expanded "stop scanning" headings** — added "you may like", "you
+    might like", "complete your", "complete your set", "pair (it )?with",
+    "style (it )?with", "shop the look", "more from", "wear it with",
+    "goes with", "pairs well". Catches Alo's "Pair it with" inline
+    recommendation block that was leaking Vuori products into Alo cart
+    imports.
+  - **URL-encoded payload** — same `+` fix the email importer got in v34.
+
+**Pre-existing issue fixed in passing:** `js/receipts-r1.js` had a
+duplicated trailing block (lines 138-143 — same Edit-tool footgun pattern
+seen earlier on `slideshow-r1.js`). Truncated to a clean tail at line 137.
+This was blocking the bundle build until fixed.
+
+**Build/deploy:**
+- Bundle: `?v=1777986950586`, cache `virtual-closet-v35`, 479,563 bytes,
+  40 sources.
+- Bookmarklet body sizes after v35:
+  - Email importer: 6,457 chars (was 6,400 in v34).
+  - Cart importer: 3,978 chars (was ~2,200 in v33). Both well under
+    bookmarklet length limits.
+- Symbol verification in shipped bundle: `widgetRe`, `naturalWidth`,
+  `seenKey`, `var dedup` (×2 — one in each importer), and all carried-
+  forward v34 symbols (`MARKETPLACES`, `cleanName`, `hennes`,
+  `_inferOrderCategory`, `data-purchased`) all present.
+
+**On deck — Option C (next session):**
+Per-item `totalPaid` field for tracking actual amount paid (item price +
+shipping + tax + marketplace fee). User asked for this after noticing
+that a $14 item from a Poshmark email actually cost $23.44 with fees.
+Schema change + edit form addition + email importer to capture the
+"Total: $X.XX" line + Receipts/Insights to use `totalPaid`. Held to v36
+to keep this v35 deploy small and focused.
+
+**Test plan after v35 deploys:**
+1. Delete every bogus row from earlier failed imports (the H&M sports
+   bras, the Sam's Club garbage, the duplicate Alo dresses/skirts).
+2. Re-bookmarklet the same Poshmark email — expect ONE clean row.
+3. Re-bookmarklet aloyoga.com cart — expect ONE row per real cart item,
+   no Sam's Club, no Vuori (recommendations cut off correctly).
+4. Verify with DevTools that bundle is now at `?v=1777986950586`.
+
+### 2026-05-04 (cont. 2) — Email importer v34: dedupe + name + category + brand
+
+User tested v32 against a Poshmark order email for what was actually a Vuori
+sports bra. Four problems surfaced:
+
+1. **Four duplicates** of the same item — bookmarklet's `gatherScopes`
+   returned overlapping containers (iframe + `[role="document"]` + reading
+   pane div) and walked each independently, finding the same row N times.
+2. **Greedy item name** — captured "Item: black sports bra with removable
+   pads #activewea... Size: S Item price: $14.00" instead of just the
+   product name.
+3. **Category showed "undefined"** — receiver wasn't inferring
+   garmentType/subtype from the name.
+4. **Wrong brand "H&M"** — `BRANDS` had `hm:'H&M'` as a substring key,
+   matched anywhere "hm" appeared in 8000 chars of `document.body.textContent`
+   (which includes Outlook's whole UI shell). The Poshmark email has zero
+   brand info anyway — only the user knows it's a Vuori bra.
+
+**v34 fixes:**
+
+- `js/emailimport-r1.js`:
+  - Removed `hm:'H&M'` from `BRANDS`. Added `'hennes':'H&M'` instead
+    (precise, distinctive).
+  - Added `MARKETPLACES = ['poshmark','mercari','depop','ebay','vinted',
+    'thredup','grailed','tradesy','vestiaire','therealreal','farfetch
+    second life','rebag','fashionphile']`. When detected, `detectBrand()`
+    returns `''` so the user fills in the actual product brand via Edit
+    rather than getting the marketplace name (or worse, a false-positive
+    match).
+  - Rewrote `detectBrand`: prioritize sender mailto/title attrs → subject
+    heading → iframe email-body text (4000 char cap). Removed the
+    document-wide body text scan that produced the H&M false positive.
+  - New `cleanName(s)` post-processor: strips `Item:`/`Order:`/`Product:`/
+    `SKU:` prefixes, splits on `Size:`/`Color:`/`$`/`Item price:` and
+    `#xxx...` suffixes. Wired into the items.push step.
+  - Added dedupe pass after collection: by `imageUrl` first (most reliable
+    signal — same product photo means same item), falling back to a
+    `name|price` tuple when an item has no image. Collapses the multi-scope
+    duplication.
+- `js/closet-r10.js`:
+  - Added `_ORDER_IMPORT_KEYWORDS` table and `_inferOrderCategory(text)`
+    helper at module scope (parallel to wishlist's `_inferGarmentType` /
+    `_inferSubtype`, kept local to avoid load-order coupling).
+  - In `_handleOrderImportParam`, computes
+    `[inferredGT, inferredST] = _inferOrderCategory(name)` and stores them
+    as `garmentType` / `subtype` on the new closet item. "sports bra" →
+    Intimates → Sports bra, etc.
+
+**Build/deploy:**
+- Bundle: `?v=1777949305505`, cache `virtual-closet-v34`, 477,230 bytes,
+  40 sources. Bookmarklet body is 6400 chars (well under limits).
+- Symbol verification in shipped bundle: `MARKETPLACES`, `cleanName`,
+  `var dedup`, `hennes`, `_inferOrderCategory`, `inferredGT`,
+  `_ORDER_IMPORT_KEYWORDS` all present.
+
+**Test plan after deploy:**
+1. Delete the four bogus "H&M" sports bra rows from the closet.
+2. Re-bookmarklet the same Poshmark/Vuori email. Expected:
+   - Exactly **one** item (not four).
+   - Brand field **blank** (Tiffany fills in "Vuori" via Edit).
+   - Name = `"black sports bra with removable pads"` (no `Item:` /
+     `Size:` / `$` cruft).
+   - Category populated as Intimates → Sports bra.
+3. Test against a real retailer email (Vuori, Lululemon) to confirm brand
+   detection still works for proper order confirmations.
+
+**Edit-tool footgun strikes (3 truncations this patch):**
+The Edit tool truncated `js/emailimport-r1.js` twice and `js/closet-r10.js`
+once during this session. Each time the tail was lost mid-line. Recovered
+by appending heredoc content for the bookmarklet file, and by extracting
+the original closet-r10.js content from the previously-bundled
+`hugo-site/dist/app.bundle.js` and splicing the missing tail back in.
+Verification: ran `node --check` after each edit, plus a final symbol-grep
+against the shipped bundle.
+
+### 2026-05-04 (cont.) — Surface Email Importer on Receipts page
+
+User noticed the new Email Importer wasn't discoverable from the Receipts
+page where she'd originally asked about email forwarding. Wired it up:
+
+- `js/receipts-r1.js` — replaced the "Coming later: needs server
+  infrastructure" muted note with two affordances:
+  - A primary `📧 Import from email` button in the page header (right side).
+  - A real link in the help card body, replacing the old note, that points
+    to `#/email-import` and explains the bookmarklet flow in one sentence.
+- Re-bundled (40 sources, 470,891 bytes), bumped cache-buster to
+  `?v=1777946017709`, bumped `CACHE_NAME` to `virtual-closet-v33`. Synced
+  to `hugo-site/`.
+
+This is the same un-pushed change as the earlier 2026-05-04 entry — they
+ship together in one `DEPLOY.ps1` push.
+
+### 2026-05-04 — Email-order importer + Purchased button on wishlist
+
+**Trigger:** user asked for two things:
+
+1. A way to drop items from an Outlook order-confirmation email straight
+   into the closet without typing anything.
+2. A "Purchased" button on each wishlist row that promotes the wishlist
+   item into the closet with a quick price + date prompt.
+
+(A real email-forwarding address — `closet@…` — would need a server, which
+the static GitHub Pages setup can't provide. The bookmarklet pattern is the
+no-server approximation.)
+
+**What shipped:**
+
+- New module `js/emailimport-r1.js` — setup page at `#/email-import`
+  generating a "📧 Order → Closet" bookmarklet. The bookmarklet:
+  - Gathers candidate DOM scopes (same-origin iframes via `srcdoc`,
+    `[role="document"]`, `[aria-label*="message body"]`, `div[id*="ReadingPane"]`,
+    etc.) so it works against both the new Monarch Outlook UI and the
+    classic iframe-based reading pane. Falls back to `document.body` if
+    nothing else matches.
+  - Detects brand from email subject + sender (`mailto:` links, `aria-label`
+    sender chips, `[title*="@"]` spans), then falls back to a bounded scan
+    of `body.textContent`. Brand dictionary covers ~40 retailers (Lululemon,
+    Varley, Vuori, Alo, Patagonia, Athleta, Aerie, Nordstrom, Anthropologie,
+    Madewell, Free People, Reformation, Levi's, Sephora, etc.).
+  - Walks each scope for image+price pairs (same leaf-detection trick as
+    `cartimport-r1.js`: drop containers that wrap another image+price,
+    keep the leaf). Caps at 25 items.
+  - Encodes the payload as base64 JSON and **URL-encodes** it before
+    stuffing into `?orderImport=` (latent bug the old cart-import
+    bookmarklet has — `+` in base64 gets corrupted by URLSearchParams; this
+    one is hardened against that).
+  - Opens `tmquinones.github.io/virtual-closet/#/closet?orderImport=…`.
+
+- `js/closet-r10.js` gained `_handleOrderImportParam(params)`:
+  - Reads `params.orderImport` from the router OR a sessionStorage stash
+    (`vc:pendingOrderImport`) — same auth-gate pattern as the cart-import
+    handler so items don't write to the guest DB while the login overlay
+    is up.
+  - Strips the param from URL/stash before mutating anything (so a refresh
+    can't re-prompt).
+  - Confirms with user, then loops `dbAddItem` for each item, fetching the
+    photo via `fetchImageBlob` + `resizeImage`. Sets `purchaseDate` to
+    today and copies `purchasePrice` from the email's price. Stashes new
+    IDs in `vc:lastImportIds` so the existing review banner picks them up.
+  - Wrapped in try/catch by `renderClosetView` — a malformed payload can't
+    blank the closet (mirrors the wishlist hardening from 2026-05-01).
+
+- `js/app-r10.js`:
+  - Added `'email-import'` to `ROUTES` and a `case 'email-import'` to the
+    router switch.
+  - Signin handoff: after successful signin, if
+    `sessionStorage['vc:pendingOrderImport']` is set and the user isn't
+    already on `#/closet`, force-route to `#/closet` so the deferred
+    import lands in the new user's DB.
+
+- `js/wishlist-r6.js` — Purchased button on each row.
+  - New `[data-purchased="…"]` button next to Edit/Delete on every wishlist
+    row (`rowHtml`).
+  - New `_purchaseFlow(wish)` helper: `openModal` with two inputs (price
+    prefilled from `targetPrice`, date defaulting to today). On confirm:
+    - Builds a closet payload: `name`, `brand`, `color`, `size`, `url`,
+      `notes`, `garmentType`, `subtype`, `purchasePrice`, `purchaseDate`,
+      and carries over `photo` / `photo2` / `thumb` from the wishlist
+      record.
+    - `dbAddItem(...)` → `dbDeleteWishlistItem(wish.id)` → toast + re-render.
+    - Stashes the new closet ID in `vc:lastImportIds` so the closet's
+      review banner highlights it.
+  - Wired in `wireRowActions` via a `[data-purchased]` listener.
+
+- `index.html` — added a sidebar nav entry "📧 Email Importer" pointing
+  to `#/email-import` (right after the existing Cart Importer entry).
+
+**Build & deploy:**
+
+- Bundle build SOURCES list updated to include `js/emailimport-r1.js` (39
+  → 40 modules). Bundle is 470,626 bytes.
+- Cache-buster bumped: `app.bundle.js?v=1777927937835`,
+  `CACHE_NAME = 'virtual-closet-v32'`.
+- Synced `index.html`, `sw.js`, `dist/app.bundle.js` into `hugo-site/`.
+- Verified all expected symbols are in the final bundle:
+  `data-purchased`, `_purchaseFlow`, `_handleOrderImportParam`,
+  `renderEmailImportView`, `pendingOrderImport`, `case 'email-import'`,
+  the `Order → Closet` bookmarklet label.
+
+**Pre-existing bug fixed in passing:** `js/slideshow-r1.js` had a
+duplicated trailing block (the export + maybeRender + IIFE close were
+present twice, lines 192–201) which would have made `node --check` of the
+bundle fail. Truncated the file at line 191 to the single clean tail.
+Probably an Edit-tool truncation footgun from a prior session that hadn't
+been bundled yet.
+
+**Known rough edges to flag for the user:**
+
+- Marketing emails with carousels of items the user didn't actually buy
+  will pull in extras. The bookmarklet doesn't try to distinguish
+  "your order" from "you might also like" recommendation blocks within an
+  email — that's a v2 polish.
+- The Outlook desktop / mobile **app** is not supported — only the
+  browser version (outlook.live.com / outlook.office.com / Gmail web).
+- Gmail web also works with the same bookmarklet, no separate setup.
+
+**To test:**
+
+1. Push via `.\DEPLOY.ps1 "..."`.
+2. After push, clear the service worker (Application → Service Workers →
+   Unregister + Storage → Clear site data, IndexedDB checkbox **OFF**).
+3. Visit the closet, see new "Email Importer" entry in sidebar.
+4. Setup page → drag the bookmarklet to bookmarks bar.
+5. Open an order confirmation email in Outlook (browser), click the
+   bookmark, confirm import → items appear in closet.
+6. On a wishlist row, click the new ✓ Purchased button → fill in price &
+   date → item moves to closet.
+
+---
+
 ### 2026-05-01 — Cart-importer auth-gate fix (defer until signin)
 
 **Trigger:** user reported the cart bookmarklet successfully detected items
@@ -1797,9 +2085,35 @@ items, the picker is now multi-select: tick checkboxes, hit "Add N",
 and they all drop into the slot at once. Cap of 30 per round so the
 modal stays fast.
 
-## Outstanding items / things the user may want next
+### Phase 32 — v42: Color chart counts trust the user's tag (2026-05-06)
 
-- Pick a brand from slide 13 and update slides 1, 4, and 16 to match
-- Replace placeholder funding amount on slide 15 with a real number
-- Replace founder name "ChrTif" / initials "CT" / bio on slide 14
-- Continue add
+Tiffany flagged that the Insights → Colors wheel and counts didn't match
+her actual closet — Cream and White were inflated. Root cause was a
+priority inversion introduced by v41: `renderColorsTab` checked
+`item.paletteColor` (photo-derived, probabilistic) **before**
+`normalizeColor(item.color)` (the user's explicit tag). When the v41 Sync
+button ran across the closet, photo extraction picked up white-backdrop
+pixels, JPEG noise, and skin tones, and tagged plenty of Black/Navy/Olive
+items with `paletteColor: "Cream"` or `"White"`. The chart then counted
+those items as Cream/White even though the user's `color` field said
+otherwise.
+
+Three changes in v42:
+
+1. **insights-r7.js — invert priority.** Use
+   `normalizeColor(item.color)` first if it resolves to a canonical
+   palette name (in `COLOR_HEX`, directly or via `COLOR_ALIASES`).
+   Fall back to `paletteColor` only for brand-specific names like
+   "Anthracite" or "Bluestone" that aren't in the alias table. Last
+   resort: keep the raw text so unknown colors still appear in the
+   legend instead of vanishing.
+2. **photo-suggest-r1.js — tighter, smarter extraction.** Lowered the
+   near-white filter from sum > 720 to sum > 685 (catches more
+   JPEG-blurred backdrops). Added a near-skin filter (warm hue, R > G > B
+   with modest spread) so selfie skin doesn't drive paletteColor. And
+   instead of mapping just `filtered[0]` to a palette name, the function
+   now sums weights per palette name across the whole filtered pool and
+   returns the highest-aggregate name — much more robust to noisy single
+   clusters.
+3. **closet-r10.js — Add Item is conservative.** When the user types a
+   canonical color ("Black", "Navy", "Olive", etc.)

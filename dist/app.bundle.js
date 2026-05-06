@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-05-06 15:10:53 */
-/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/photo-suggest-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
+/* Virtual Closet bundle — built 2026-05-06 15:40:48 */
+/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/photo-suggest-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -2558,8 +2558,18 @@ async function showFileForm(file) {
         extras.push(await resizeImage(pendingFiles[i], 1200, 0.88));
       }
       const receiptField = (typeof pendingReceipt !== 'undefined' && pendingReceipt) ? { receipt: pendingReceipt } : {};
+      // Only derive paletteColor from the photo when the user's color tag
+      // ISN'T already a canonical palette name. If they typed "Black",
+      // "Navy", "Olive", etc., trust that — photo extraction is noisy and
+      // can pick up backdrop/skin/shadow pixels and produce a worse answer.
       let paletteFromPhoto = null;
-      if (typeof nearestPaletteColorFromImage === 'function') {
+      const userColorRaw = (data && data.color ? String(data.color).trim() : '');
+      const userColorNorm = userColorRaw && (typeof normalizeColor === 'function')
+        ? normalizeColor(userColorRaw) : userColorRaw;
+      const userColorIsCanonical = userColorNorm
+        && typeof COLOR_HEX === 'object' && COLOR_HEX
+        && Object.prototype.hasOwnProperty.call(COLOR_HEX, userColorNorm);
+      if (!userColorIsCanonical && typeof nearestPaletteColorFromImage === 'function') {
         try { paletteFromPhoto = await nearestPaletteColorFromImage(photo); } catch (_) {}
       }
       const paletteField = paletteFromPhoto ? { paletteColor: paletteFromPhoto } : {};
@@ -2997,7 +3007,6 @@ async function reviewNext() {
     if (editPendingPhoto) {
       try {
         updates.photo = await resizeImage(editPendingPhoto, 1200, 0.88);
-        updates.thumb = await makeThumbnail(editPendingPhoto, 800, 0.88);
       } catch (err) {
         alert('Failed to process new photo: ' + err.message);
         return;
@@ -3021,6 +3030,8 @@ async function reviewNext() {
     setTimeout(reviewNext, 80);
   });
 }
+
+
 
 
 /* ===== js/wear-r1.js ===== */
@@ -5649,24 +5660,37 @@ window.addEventListener('DOMContentLoaded', function () {
     // Returned items are no longer owned — exclude from the palette.
     if (typeof activeItems === 'function') items = activeItems(items);
     // Group items by canonical palette color. Priority order:
-    //   1. item.paletteColor — derived from item photo (set by Sync button)
-    //   2. normalizeColor(item.color) — alias-table lookup of the user's
-    //      free-text purchase color (e.g. "Blue Coast Heather" → Navy)
-    //   3. untagged
-    // The user's original `color` field stays intact in the item record
-    // — we just don't rely on it being a canonical palette name.
+    //   1. normalizeColor(item.color) — IF it resolves to a canonical palette
+    //      name (in COLOR_HEX, directly or via COLOR_ALIASES). This is the
+    //      user's explicit tag and is always trusted over photo guesses.
+    //   2. item.paletteColor — photo-derived fallback for brand-specific
+    //      names ("Anthracite", "Bluestone", "Light Provence Blue") that
+    //      don't normalize to a known palette color.
+    //   3. raw item.color — last-resort so unknown free-text colors still
+    //      appear in the legend instead of being silently dropped.
+    //   4. untagged.
+    // Order matters: photo extraction is probabilistic and can pick up
+    // backdrop / skin / shadow pixels and mis-bucket items as Cream/White.
+    // The user's tag, when canonical, is the truth.
     const counts = new Map();
     let untagged = 0;
-    let needSync = 0; // count of items with a photo but no paletteColor
+    let needSync = 0; // count of items with a non-canonical color + photo + no paletteColor
+    const isCanonical = (name) => (typeof COLOR_HEX === 'object' && COLOR_HEX && Object.prototype.hasOwnProperty.call(COLOR_HEX, name));
     for (const i of items) {
-      let c = (i.paletteColor || '').trim();
-      if (!c) {
-        const raw = (i.color || '').trim();
-        if (raw) {
-          c = (typeof normalizeColor === 'function') ? normalizeColor(raw) : raw;
-        }
-        if (i.photo && !i.paletteColor) needSync++;
+      const raw = (i.color || '').trim();
+      const normalized = raw && (typeof normalizeColor === 'function') ? normalizeColor(raw) : raw;
+      let c = '';
+      if (normalized && isCanonical(normalized)) {
+        c = normalized;
+      } else if (i.paletteColor && (i.paletteColor + '').trim()) {
+        c = (i.paletteColor + '').trim();
+      } else if (normalized) {
+        c = normalized;
       }
+      // Suggest sync only for items where the user's color isn't canonical
+      // AND we don't yet have a paletteColor — those are the ones the
+      // photo-derived fallback would actually help.
+      if (i.photo && !i.paletteColor && (!normalized || !isCanonical(normalized))) needSync++;
       if (!c) { untagged++; continue; }
       counts.set(c, (counts.get(c) || 0) + 1);
     }
@@ -5768,8 +5792,8 @@ window.addEventListener('DOMContentLoaded', function () {
 
       ${needSync > 0 ? `
         <div class="audit-summary" style="margin-top: 14px;">
-          <div><strong>${needSync}</strong> piece${needSync === 1 ? '' : 's'} could be re-categorized using their photo.</div>
-          <div class="muted" style="font-size: 11.5px; margin: 4px 0 10px;">Brand-specific color names ("Anthracite", "Bluestone", "Light Provence Blue") get bucketed into canonical palette colors based on what the photo actually looks like. Doesn't change the item's color name — only the chart grouping.</div>
+          <div><strong>${needSync}</strong> piece${needSync === 1 ? '' : 's'} with brand-specific color name${needSync === 1 ? '' : 's'} could be re-categorized using their photo.</div>
+          <div class="muted" style="font-size: 11.5px; margin: 4px 0 10px;">Brand-specific names ("Anthracite", "Bluestone", "Light Provence Blue") get bucketed into canonical palette colors based on what the photo actually looks like. Items already tagged with a canonical color (Black, Navy, Olive, etc.) are not touched — your tag is trusted as-is.</div>
           <button class="btn" id="syncPaletteBtn">Sync colors from photos</button>
           <span class="muted" id="syncPaletteStatus" style="font-size: 11.5px; margin-left: 10px;"></span>
         </div>
@@ -5784,7 +5808,14 @@ window.addEventListener('DOMContentLoaded', function () {
           return;
         }
         const status = container.querySelector('#syncPaletteStatus');
-        const todo = items.filter(i => i.photo && !i.paletteColor);
+        const isCanonicalName = (n) => (typeof COLOR_HEX === 'object' && COLOR_HEX && Object.prototype.hasOwnProperty.call(COLOR_HEX, n));
+        const todo = items.filter(i => {
+          if (!i.photo || i.paletteColor) return false;
+          const raw = (i.color || '').trim();
+          const norm = raw && (typeof normalizeColor === 'function') ? normalizeColor(raw) : raw;
+          // Only sync items whose user-supplied color isn't already canonical
+          return !norm || !isCanonicalName(norm);
+        });
         let done = 0, updated = 0;
         syncBtn.disabled = true;
         for (const it of todo) {
@@ -10973,159 +11004,6 @@ function rotationDayHtml(day) {
 })();
 
 
-/* ===== js/photo-suggest-r1.js ===== */
-// photo-suggest-r1.js — heuristic color-based item suggestions from a daily photo.
-// Local/no-server: extracts dominant photo colors via canvas, maps each to the
-// nearest palette color in data-r9.js's COLOR_HEX, then ranks closet items by
-// how well their `color` field overlaps. Exposes:
-//   - window.extractDominantColors(blob, maxColors=6) → [{rgb:[r,g,b], weight}]
-//   - window.suggestItemsFromPhoto(blob, items, {topN}) → [item, ...]
-
-(function () {
-  async function extractDominantColors(blob, maxColors = 6) {
-    if (!blob) return [];
-    const url = URL.createObjectURL(blob);
-    try {
-      const img = await new Promise((res, rej) => {
-        const i = new Image();
-        i.onload = () => res(i);
-        i.onerror = rej;
-        i.src = url;
-      });
-      const canvas = document.createElement('canvas');
-      const SIZE = 80;
-      canvas.width = SIZE;
-      canvas.height = SIZE;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, SIZE, SIZE);
-      const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
-
-      // Quantize to 4 bits/channel → 4096 buckets, accumulate exact RGB sums
-      // so we can recover the bucket's centroid color.
-      const buckets = new Map();
-      for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 3] < 128) continue; // transparent
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        // Skip near-white (skin/background washout) and near-black extremes,
-        // but keep a representative sample of each so they can still match.
-        const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
-        const cur = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
-        cur.count++;
-        cur.r += r;
-        cur.g += g;
-        cur.b += b;
-        buckets.set(key, cur);
-      }
-
-      const total = SIZE * SIZE;
-      return [...buckets.values()]
-        .map(c => ({
-          rgb: [Math.round(c.r / c.count), Math.round(c.g / c.count), Math.round(c.b / c.count)],
-          weight: c.count / total,
-        }))
-        .sort((a, b) => b.weight - a.weight)
-        .slice(0, maxColors);
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-
-  function hexToRgb(hex) {
-    if (!hex || typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) return null;
-    return [
-      parseInt(hex.slice(1, 3), 16),
-      parseInt(hex.slice(3, 5), 16),
-      parseInt(hex.slice(5, 7), 16),
-    ];
-  }
-  function rgbDist2(a, b) {
-    const dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2];
-    return dr * dr + dg * dg + db * db;
-  }
-
-  // Nearest palette color name (Black, Olive, Hot Pink, …) for a single RGB.
-  function nearestPaletteColor(rgb) {
-    if (typeof COLOR_HEX !== 'object' || !COLOR_HEX) return null;
-    let bestName = null, bestDist = Infinity;
-    for (const [name, hex] of Object.entries(COLOR_HEX)) {
-      const target = hexToRgb(hex);
-      if (!target) continue;
-      const d = rgbDist2(rgb, target);
-      if (d < bestDist) { bestDist = d; bestName = name; }
-    }
-    return bestName;
-  }
-
-  async function suggestItemsFromPhoto(blob, items, options) {
-    options = options || {};
-    const topN = options.topN || 15;
-    if (!blob || !Array.isArray(items) || items.length === 0) return [];
-
-    let dominants;
-    try { dominants = await extractDominantColors(blob, 6); }
-    catch (_) { return []; }
-    if (!dominants.length) return [];
-
-    // Build canonical-color and family weights from the photo's dominant
-    // colors, weighted by pixel coverage.
-    const colorWeights = new Map();
-    const familyWeights = new Map();
-    for (const dc of dominants) {
-      const name = nearestPaletteColor(dc.rgb);
-      if (!name) continue;
-      colorWeights.set(name, (colorWeights.get(name) || 0) + dc.weight);
-      const fam = (typeof familyForColor === 'function') ? familyForColor(name) : null;
-      if (fam) familyWeights.set(fam, (familyWeights.get(fam) || 0) + dc.weight);
-    }
-
-    const scored = items.map(it => {
-      let s = 0;
-      const raw = (it.color || '').trim();
-      if (!raw) return { item: it, score: 0 };
-      const c = (typeof normalizeColor === 'function') ? normalizeColor(raw) : raw;
-      if (c && colorWeights.has(c)) s += colorWeights.get(c) * 5;
-      const fam = (typeof familyForColor === 'function') ? familyForColor(c) : null;
-      if (fam && familyWeights.has(fam)) s += familyWeights.get(fam) * 2;
-      return { item: it, score: s };
-    });
-
-    return scored
-      .filter(x => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topN)
-      .map(x => x.item);
-  }
-
-  // Single-best palette color from an image, used to tag closet items so the
-  // Insights color chart can group brand-specific names ("Anthracite",
-  // "Bluestone", etc.) into canonical palette buckets without overwriting
-  // the user's original purchase color name. Returns a palette name like
-  // 'Navy' or 'Olive' — null if no usable color is found.
-  async function nearestPaletteColorFromImage(blob) {
-    if (!blob) return null;
-    let dominants;
-    try { dominants = await extractDominantColors(blob, 10); }
-    catch (_) { return null; }
-    if (!dominants.length) return null;
-    // Drop near-white (likely product-shot background) and near-black
-    // extremes so we get the actual garment color.
-    const filtered = dominants.filter(dc => {
-      const sum = dc.rgb[0] + dc.rgb[1] + dc.rgb[2];
-      if (sum > 720) return false;        // near-white background
-      if (sum < 60)  return false;        // near-pure-black (rare in real photos)
-      return true;
-    });
-    const pick = (filtered[0] || dominants[0]);
-    if (!pick) return null;
-    return nearestPaletteColor(pick.rgb);
-  }
-
-  window.extractDominantColors = extractDominantColors;
-  window.suggestItemsFromPhoto = suggestItemsFromPhoto;
-  window.nearestPaletteColorFromImage = nearestPaletteColorFromImage;
-})();
-
-
 /* ===== js/fit-r1.js ===== */
 // fit-r1.js — make the .tile-grid fill the visible viewport.
 // Picks columns by viewport width, rows = ceil(tiles/cols), then sets
@@ -11524,4 +11402,190 @@ function rotationDayHtml(day) {
 
   // Expose for debugging
   window.ghSync = { open: openSyncModal, backup: uploadBackup, config: getConfig };
+})();
+
+
+/* ===== js/photo-suggest-r1.js ===== */
+// photo-suggest-r1.js — heuristic color-based item suggestions from a daily photo.
+// Local/no-server: extracts dominant photo colors via canvas, maps each to the
+// nearest palette color in data-r9.js's COLOR_HEX, then ranks closet items by
+// how well their `color` field overlaps. Exposes:
+//   - window.extractDominantColors(blob, maxColors=6) → [{rgb:[r,g,b], weight}]
+//   - window.suggestItemsFromPhoto(blob, items, {topN}) → [item, ...]
+
+(function () {
+  async function extractDominantColors(blob, maxColors = 6) {
+    if (!blob) return [];
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = rej;
+        i.src = url;
+      });
+      const canvas = document.createElement('canvas');
+      const SIZE = 80;
+      canvas.width = SIZE;
+      canvas.height = SIZE;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, SIZE, SIZE);
+      const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
+
+      // Quantize to 4 bits/channel → 4096 buckets, accumulate exact RGB sums
+      // so we can recover the bucket's centroid color.
+      const buckets = new Map();
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 128) continue; // transparent
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        // Skip near-white (skin/background washout) and near-black extremes,
+        // but keep a representative sample of each so they can still match.
+        const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+        const cur = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
+        cur.count++;
+        cur.r += r;
+        cur.g += g;
+        cur.b += b;
+        buckets.set(key, cur);
+      }
+
+      const total = SIZE * SIZE;
+      return [...buckets.values()]
+        .map(c => ({
+          rgb: [Math.round(c.r / c.count), Math.round(c.g / c.count), Math.round(c.b / c.count)],
+          weight: c.count / total,
+        }))
+        .sort((a, b) => b.weight - a.weight)
+        .slice(0, maxColors);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function hexToRgb(hex) {
+    if (!hex || typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) return null;
+    return [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+  }
+  function rgbDist2(a, b) {
+    const dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2];
+    return dr * dr + dg * dg + db * db;
+  }
+
+  // Nearest palette color name (Black, Olive, Hot Pink, …) for a single RGB.
+  function nearestPaletteColor(rgb) {
+    if (typeof COLOR_HEX !== 'object' || !COLOR_HEX) return null;
+    let bestName = null, bestDist = Infinity;
+    for (const [name, hex] of Object.entries(COLOR_HEX)) {
+      const target = hexToRgb(hex);
+      if (!target) continue;
+      const d = rgbDist2(rgb, target);
+      if (d < bestDist) { bestDist = d; bestName = name; }
+    }
+    return bestName;
+  }
+
+  async function suggestItemsFromPhoto(blob, items, options) {
+    options = options || {};
+    const topN = options.topN || 15;
+    if (!blob || !Array.isArray(items) || items.length === 0) return [];
+
+    let dominants;
+    try { dominants = await extractDominantColors(blob, 6); }
+    catch (_) { return []; }
+    if (!dominants.length) return [];
+
+    // Build canonical-color and family weights from the photo's dominant
+    // colors, weighted by pixel coverage.
+    const colorWeights = new Map();
+    const familyWeights = new Map();
+    for (const dc of dominants) {
+      const name = nearestPaletteColor(dc.rgb);
+      if (!name) continue;
+      colorWeights.set(name, (colorWeights.get(name) || 0) + dc.weight);
+      const fam = (typeof familyForColor === 'function') ? familyForColor(name) : null;
+      if (fam) familyWeights.set(fam, (familyWeights.get(fam) || 0) + dc.weight);
+    }
+
+    const scored = items.map(it => {
+      let s = 0;
+      const raw = (it.color || '').trim();
+      if (!raw) return { item: it, score: 0 };
+      const c = (typeof normalizeColor === 'function') ? normalizeColor(raw) : raw;
+      if (c && colorWeights.has(c)) s += colorWeights.get(c) * 5;
+      const fam = (typeof familyForColor === 'function') ? familyForColor(c) : null;
+      if (fam && familyWeights.has(fam)) s += familyWeights.get(fam) * 2;
+      return { item: it, score: s };
+    });
+
+    return scored
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topN)
+      .map(x => x.item);
+  }
+
+  // Heuristic: is this RGB likely a product-shot backdrop, skin tone, or
+  // shadow? Used to drop noise pixels before mapping to palette names.
+  function isBackdropOrSkin(rgb) {
+    const [r, g, b] = rgb;
+    const sum = r + g + b;
+    // Tighter near-white than v41. RGB(225,225,225) sums to 675 and below
+    // this threshold counts as a real (off-white) color; (230,230,230)
+    // sums to 690 and is treated as backdrop. Empirically this catches
+    // most JPEG-blurred white backgrounds without dropping true Cream/Ivory
+    // garments which sit around (230-245, 220-235, 200-225) → still a
+    // judgement call, but biased away from over-tagging White/Cream.
+    if (sum > 685) return true;        // near-white backdrop
+    if (sum < 60)  return true;        // pure black (rare in real photos)
+    // Skin tone: warm hue, R > G > B with modest spread. Covers fair to
+    // medium tones without nuking actual peach/coral garments (which tend
+    // to have R-B > 90 and a redder cast).
+    if (r > g && g > b && r >= 150 && r <= 245) {
+      const rb = r - b;
+      const gb = g - b;
+      if (rb >= 25 && rb <= 90 && gb >= 10 && gb <= 55) return true;
+    }
+    return false;
+  }
+
+  // Single-best palette color from an image, used to tag closet items so the
+  // Insights color chart can group brand-specific names ("Anthracite",
+  // "Bluestone", etc.) into canonical palette buckets without overwriting
+  // the user's original purchase color name. Returns a palette name like
+  // 'Navy' or 'Olive' — null if no usable color is found.
+  async function nearestPaletteColorFromImage(blob) {
+    if (!blob) return null;
+    let dominants;
+    try { dominants = await extractDominantColors(blob, 12); }
+    catch (_) { return null; }
+    if (!dominants.length) return null;
+    // Drop near-white backdrop, near-pure-black, and skin tones.
+    const filtered = dominants.filter(dc => !isBackdropOrSkin(dc.rgb));
+    const pool = filtered.length ? filtered : dominants;
+    // Aggregate weight per palette name across the whole filtered pool.
+    // Picking just `filtered[0]` is brittle: garment can have multiple
+    // dominant clusters (folds, gradient, shadow) and the top cluster is
+    // sometimes a noisy transition color. Summing weights per palette name
+    // smooths that out.
+    const palWeights = new Map();
+    for (const dc of pool) {
+      const name = nearestPaletteColor(dc.rgb);
+      if (!name) continue;
+      palWeights.set(name, (palWeights.get(name) || 0) + dc.weight);
+    }
+    if (palWeights.size === 0) return null;
+    let best = null, bestW = -1;
+    for (const [name, w] of palWeights) {
+      if (w > bestW) { bestW = w; best = name; }
+    }
+    return best;
+  }
+
+  window.extractDominantColors = extractDominantColors;
+  window.suggestItemsFromPhoto = suggestItemsFromPhoto;
+  window.nearestPaletteColorFromImage = nearestPaletteColorFromImage;
 })();
