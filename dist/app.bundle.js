@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-05 22:18:44 */
+/* Virtual Closet bundle — built 2026-05-06 14:01:04 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/photo-suggest-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -232,7 +232,10 @@ function labelForOccasion(id) { return OCCASIONS.find(o => o.id === id)?.label |
 
 function isActiveItem(item) {
   if (!item) return false;
-  return item.status !== 'returned';
+  // Items tagged 'returned' or 'sold' are no longer owned — exclude from
+  // every count (sidebar, closet, browse, charts) and from the outfit pool.
+  if (item.status === 'returned' || item.status === 'sold') return false;
+  return true;
 }
 function activeItems(items) {
   return (items || []).filter(isActiveItem);
@@ -8951,37 +8954,55 @@ function rotationDayHtml(day) {
 
 
 /* ===== js/returned-r1.js ===== */
-// returned-r1.js — Dedicated Returned items page at #/returned
-// Lists every item tagged status === 'returned' with a faded visual treatment.
-// User can edit any item (e.g. flip status back to Keep), or use this as
-// a permanent record of what they've sent back.
+// returned-r1.js — Returned & Sold items page at #/returned
+//
+// Shows every item tagged status === 'returned' OR status === 'sold' with a
+// faded visual treatment. Items here aren't counted in the sidebar piece
+// total or any analytics, but the record stays for accounting / Girl Math
+// resale tracking.
+//
+// User can tap any tile to edit (e.g. flip status back to Keep if they
+// changed their mind).
 
 (function() {
   async function render(main) {
     main = main || document.getElementById('main');
     if (!main) return;
     const all = await dbGetAllItems();
-    const returned = all.filter(i => i.status === 'returned');
-    returned.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const returned = all.filter(i => i.status === 'returned')
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const sold = all.filter(i => i.status === 'sold')
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const total = returned.length + sold.length;
 
     main.innerHTML = `
       <div class="page-header">
         <div class="page-title-group">
-          <h1>Returned</h1>
-          <div class="page-subtitle">${returned.length} item${returned.length === 1 ? '' : 's'} sent back · not counted in your closet</div>
+          <h1>Returned &amp; Sold</h1>
+          <div class="page-subtitle">${total} item${total === 1 ? '' : 's'} no longer in your closet · not counted in totals</div>
         </div>
         <a href="#/closet" class="btn">Back to closet</a>
       </div>
 
-      ${returned.length === 0 ? `
+      ${total === 0 ? `
         <div class="empty">
-          <div class="empty-title">Nothing returned yet</div>
-          <p>When you tag a piece's status as <strong>Returned</strong> in the Edit modal, it'll move here. Returned items don't count in your sidebar piece total or any analytics, but the record stays for your accounting.</p>
+          <div class="empty-title">Nothing returned or sold yet</div>
+          <p>When you tag a piece's status as <strong>Returned</strong> or <strong>Sold / gone</strong> in the Edit modal, it'll move here. These items don't count in your sidebar piece total or any analytics, but the record stays for your accounting.</p>
         </div>
       ` : `
-        <div class="returned-grid">
-          ${returned.map(it => returnedCardHtml(it)).join('')}
-        </div>
+        ${sold.length > 0 ? `
+          <h2 class="returned-section-title">Sold <span class="muted">${sold.length}</span></h2>
+          <div class="returned-grid">
+            ${sold.map(it => returnedCardHtml(it, 'sold')).join('')}
+          </div>
+        ` : ''}
+
+        ${returned.length > 0 ? `
+          <h2 class="returned-section-title">Returned <span class="muted">${returned.length}</span></h2>
+          <div class="returned-grid">
+            ${returned.map(it => returnedCardHtml(it, 'returned')).join('')}
+          </div>
+        ` : ''}
       `}
     `;
     main.querySelectorAll('[data-rid]').forEach(card => {
@@ -8992,14 +9013,16 @@ function rotationDayHtml(day) {
     });
   }
 
-  function returnedCardHtml(it) {
+  function returnedCardHtml(it, kind) {
     const url = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
     const name = it.name || it.subtype || labelForGarmentType(it.garmentType) || 'Untitled';
     const meta = [it.brand, it.color, labelForGarmentType(it.garmentType)].filter(Boolean).join(' · ');
     const date = it.purchaseDate ? `Purchased ${it.purchaseDate}` : '';
+    const badgeText = kind === 'sold' ? 'SOLD' : 'RETURNED';
     return `
-      <div class="returned-card" data-rid="${it.id}">
+      <div class="returned-card returned-card--${kind}" data-rid="${it.id}">
         <div class="returned-thumb" style="background-image:url('${url}')"></div>
+        <div class="returned-status-badge">${badgeText}</div>
         <div class="returned-info">
           <div class="returned-name">${escapeHtml(name)}</div>
           <div class="returned-meta">${escapeHtml(meta)}</div>

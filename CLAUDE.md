@@ -87,7 +87,20 @@ above and ship in the next DEPLOY.ps1 push.
   Future iterations: option B (TF.js MobileNet visual similarity) or C
   (cloud vision API once a backend exists).
 
-**On deck — Option C (was v36, now v39):**
+**Last shipped (2026-05-06 morning — v40):**
+- Bundle: `dist/app.bundle.js?v=1778076064966`, cache `virtual-closet-v40`
+- **Sold items move to Returned & Sold page** — `isActiveItem` in
+  `js/data-r9.js` now excludes both `status === 'returned'` AND
+  `status === 'sold'`, so sold items vanish from the sidebar piece total,
+  closet grid, browse tiles, color pie, outfit pool, and every analytic.
+- **Returned page renamed** to "Returned & Sold" (`js/returned-r1.js` +
+  sidebar nav entry in `index.html`) and now renders two sections:
+  Sold (green corner badge) and Returned (red corner badge). Both fade
+  via the existing `.returned-card` opacity 0.65 + grayscale rule and
+  un-fade on hover. Tapping any tile still opens the Edit modal so a
+  status flip back to "Keep" sends the item back to the closet.
+
+**Still on deck — Option C (now v41) — `totalPaid`:**
 Per-item `totalPaid` field for tracking actual amount paid (item price +
 shipping + tax + marketplace fee). User asked for this after a Poshmark
 $14 item actually cost $23.44 with fees. Schema + edit form + email
@@ -391,4 +404,108 @@ fee). The closet currently has only one price field, which is ambiguous
 ("did she pay $14 or $23?").
 
 - New optional `totalPaid` field on closet items. Existing `purchasePrice`
-  keeps 
+  keeps the item-listed price untouched.
+- **Email importer** — parse the `Total: $X.XX` line from the email body
+  and capture it into `totalPaid`. Falls back to `null` when no clear
+  total is found.
+- **Item edit form** — new "Total paid (with shipping/tax/fees)" field
+  directly under "Purchase Price".
+- **Wishlist Purchased modal** — same field, prefilled to match the price
+  the user just typed.
+- **Receipts page header total** — switch to summing `totalPaid` (falling
+  back to `purchasePrice` for items that don't have one yet).
+- **Insights / Girl Math / cost-per-wear** — switch to `totalPaid` for
+  true-cost calculations.
+- **One-time backfill** — for items where `totalPaid` is blank, set
+  `totalPaid = purchasePrice`. Without this the Receipts running total
+  drops to near-zero on first load after the patch.
+
+### Other smaller items
+
+- Cart-import name extraction is greedy — on Varley the captured `name`
+  field once included color + size + price + UI text concatenated (e.g.
+  `"Davidson Sweat Color: Olive Marl Size: XS $138.00 Move to wishlist"`).
+  v34's `cleanName` post-processor handles most of this, but Varley should
+  still be re-tested after v35 to confirm.
+- See `WORK-TODO.md` for the longer backlog (mobile app conversion, more
+  brand support for cart-import, etc.).
+
+---
+
+## User context
+
+- **Tiffany Foster** (`tmquinones` on GitHub, `cqtq2025@gmail.com`).
+- Pre-fill her username in URLs / `gh` commands.
+- She's not a developer. Keep guidance terse and concrete: exact PowerShell
+  commands, exact button labels, exact paths. Avoid jargon.
+- She runs commands from PowerShell. JS goes in DevTools console (F12),
+  **not** PowerShell.
+- Her DevTools may show "Don't paste code into the DevTools Console..." —
+  she can type `allow pasting` once to unlock it.
+
+---
+
+_Last updated: 2026-05-05 — end of v35 ship + v36 planning session
+(email importer, cart importer hardening, Purchased button, Receipts wiring)._
+the item-listed price untouched.
+- **Email importer** — parse the `Total: $X.XX` line from the email body
+  and capture it into `totalPaid`. Falls back to `null` when no clear
+  total is found.
+- **Item edit form** — new "Total paid (with shipping/tax/fees)" field
+  directly under "Purchase Price" (and under the Original Price field
+  added in v39).
+- **Wishlist Purchased modal** — same field, prefilled to match the price
+  the user just typed.
+- **Receipts page header total** — switch to summing `totalPaid` (falling
+  back to `purchasePrice` for items that don't have one yet).
+- **Insights / Girl Math / cost-per-wear** — switch to `totalPaid` for
+  true-cost calculations. Update the v39 savings math too: savings
+  should be `originalPrice - totalPaid` once available, since fees eat
+  into the actual savings.
+- **One-time backfill** — for items where `totalPaid` is blank, set
+  `totalPaid = purchasePrice`. Without this the Receipts running total
+  drops to near-zero on first load after the patch.
+
+### C. Paste paper-receipt importer (v41 candidate, not v40)
+
+Tiffany pasted a Naturalizer Brea Mall receipt (Kinsley, 7.5 W, $49.99,
+2020-02-01). She wants in-store paper receipts to flow through the same
+"one paste, one click" pattern as the email importer. Plan:
+
+- New view at `#/paste-receipt` (or a Receipts-page textarea — pick
+  whichever is less navigation).
+- Heuristic parser that pulls brand (first all-caps line at top), store
+  + address, date (regex match), item name (Title Case line near price),
+  size pattern (`7.5 W`, `M`, `XS-XXXL`), price (`Item Price $X.XX` or
+  `$XX.XX`).
+- Output: a pre-filled Add Item form. User reviews + saves. No automatic
+  DB write — the parser may misread.
+- v41 is the right scope unless v40's `totalPaid` work finishes early.
+
+### Other smaller items
+
+- Cart-import name extraction is greedy on Varley — once `totalPaid` ships,
+  retest the Davidson Sweat / Wide Leg Pant 29.5 fixture above.
+- See `WORK-TODO.md` for the longer backlog (mobile app conversion, more
+  brand support for cart-import, etc.).
+
+---
+
+## User context
+
+- **Tiffany Foster** (`tmquinones` on GitHub, `cqtq2025@gmail.com`).
+- Pre-fill her username in URLs / `gh` commands.
+- She's not a developer. Keep guidance terse and concrete: exact PowerShell
+  commands, exact button labels, exact paths. Avoid jargon.
+- She runs commands from PowerShell. JS goes in DevTools console (F12),
+  **not** PowerShell.
+- Her DevTools may show "Don't paste code into the DevTools Console..." —
+  she can type `allow pasting` once to unlock it.
+
+---
+
+_Last updated: 2026-05-05 night — end of v35 → v37 → v38 → v39 day:
+email + cart importer hardening, Wear Log Items toggle, photo-driven
+daily logging (color heuristic), originalPrice field + Girl Math savings
+section. Paste paper-receipt importer drafted (Naturalizer fixture
+captured), not yet built. v40 = Option C totalPaid is up next._
