@@ -1,4 +1,4 @@
-/* Virtual Closet bundle — built 2026-05-06 14:01:04 */
+/* Virtual Closet bundle — built 2026-05-06 15:10:53 */
 /* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/photo-suggest-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js */
 
 
@@ -2558,7 +2558,12 @@ async function showFileForm(file) {
         extras.push(await resizeImage(pendingFiles[i], 1200, 0.88));
       }
       const receiptField = (typeof pendingReceipt !== 'undefined' && pendingReceipt) ? { receipt: pendingReceipt } : {};
-      await dbAddItem({ ...data, photo, thumb, photos: extras, ...receiptField });
+      let paletteFromPhoto = null;
+      if (typeof nearestPaletteColorFromImage === 'function') {
+        try { paletteFromPhoto = await nearestPaletteColorFromImage(photo); } catch (_) {}
+      }
+      const paletteField = paletteFromPhoto ? { paletteColor: paletteFromPhoto } : {};
+      await dbAddItem({ ...data, photo, thumb, photos: extras, ...paletteField, ...receiptField });
       const photoCount = pendingFiles.length;
       pendingFiles = [];
       pendingFile = null;
@@ -5643,15 +5648,26 @@ window.addEventListener('DOMContentLoaded', function () {
   function renderColorsTab(container, items) {
     // Returned items are no longer owned — exclude from the palette.
     if (typeof activeItems === 'function') items = activeItems(items);
-    // Group items by color, after passing each through normalizeColor() so
-    // brand-specific names (e.g. "Blue Coast Heather") roll up to canonical
-    // palette entries (Navy) for the pie + family grouping.
+    // Group items by canonical palette color. Priority order:
+    //   1. item.paletteColor — derived from item photo (set by Sync button)
+    //   2. normalizeColor(item.color) — alias-table lookup of the user's
+    //      free-text purchase color (e.g. "Blue Coast Heather" → Navy)
+    //   3. untagged
+    // The user's original `color` field stays intact in the item record
+    // — we just don't rely on it being a canonical palette name.
     const counts = new Map();
     let untagged = 0;
+    let needSync = 0; // count of items with a photo but no paletteColor
     for (const i of items) {
-      let c = (i.color || '').trim();
+      let c = (i.paletteColor || '').trim();
+      if (!c) {
+        const raw = (i.color || '').trim();
+        if (raw) {
+          c = (typeof normalizeColor === 'function') ? normalizeColor(raw) : raw;
+        }
+        if (i.photo && !i.paletteColor) needSync++;
+      }
       if (!c) { untagged++; continue; }
-      if (typeof normalizeColor === 'function') c = normalizeColor(c);
       counts.set(c, (counts.get(c) || 0) + 1);
     }
     const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
@@ -5749,7 +5765,53 @@ window.addEventListener('DOMContentLoaded', function () {
           ${untagged} piece${untagged === 1 ? '' : 's'} ${untagged === 1 ? 'is' : 'are'} missing a color tag. Add one in the Edit modal to include in the chart.
         </div>
       ` : ''}
+
+      ${needSync > 0 ? `
+        <div class="audit-summary" style="margin-top: 14px;">
+          <div><strong>${needSync}</strong> piece${needSync === 1 ? '' : 's'} could be re-categorized using their photo.</div>
+          <div class="muted" style="font-size: 11.5px; margin: 4px 0 10px;">Brand-specific color names ("Anthracite", "Bluestone", "Light Provence Blue") get bucketed into canonical palette colors based on what the photo actually looks like. Doesn't change the item's color name — only the chart grouping.</div>
+          <button class="btn" id="syncPaletteBtn">Sync colors from photos</button>
+          <span class="muted" id="syncPaletteStatus" style="font-size: 11.5px; margin-left: 10px;"></span>
+        </div>
+      ` : ''}
     `;
+
+    const syncBtn = container.querySelector('#syncPaletteBtn');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', async () => {
+        if (typeof nearestPaletteColorFromImage !== 'function') {
+          alert('Photo-suggest module not loaded. Reload the page and try again.');
+          return;
+        }
+        const status = container.querySelector('#syncPaletteStatus');
+        const todo = items.filter(i => i.photo && !i.paletteColor);
+        let done = 0, updated = 0;
+        syncBtn.disabled = true;
+        for (const it of todo) {
+          done++;
+          if (status) status.textContent = `Processing ${done} of ${todo.length}…`;
+          try {
+            const palette = await nearestPaletteColorFromImage(it.photo);
+            if (palette) {
+              await dbUpdateItem(it.id, { paletteColor: palette });
+              updated++;
+            }
+          } catch (_) { /* skip individual failures */ }
+          // Yield so the UI stays responsive
+          if (done % 5 === 0) await new Promise(r => setTimeout(r, 0));
+        }
+        if (status) status.textContent = `Updated ${updated} of ${todo.length}.`;
+        syncBtn.disabled = false;
+        // Re-render the chart with refreshed data
+        setTimeout(async () => {
+          try {
+            const refreshed = await dbGetAllItems();
+            const refreshedActive = (typeof activeItems === 'function') ? activeItems(refreshed) : refreshed;
+            renderColorsTab(container, refreshedActive);
+          } catch (_) {}
+        }, 400);
+      });
+    }
 
     // Make pie slices clickable — navigate to closet filtered by that color
     container.querySelectorAll('.color-pie path[data-color]').forEach(p => {
@@ -11034,8 +11096,33 @@ function rotationDayHtml(day) {
       .map(x => x.item);
   }
 
+  // Single-best palette color from an image, used to tag closet items so the
+  // Insights color chart can group brand-specific names ("Anthracite",
+  // "Bluestone", etc.) into canonical palette buckets without overwriting
+  // the user's original purchase color name. Returns a palette name like
+  // 'Navy' or 'Olive' — null if no usable color is found.
+  async function nearestPaletteColorFromImage(blob) {
+    if (!blob) return null;
+    let dominants;
+    try { dominants = await extractDominantColors(blob, 10); }
+    catch (_) { return null; }
+    if (!dominants.length) return null;
+    // Drop near-white (likely product-shot background) and near-black
+    // extremes so we get the actual garment color.
+    const filtered = dominants.filter(dc => {
+      const sum = dc.rgb[0] + dc.rgb[1] + dc.rgb[2];
+      if (sum > 720) return false;        // near-white background
+      if (sum < 60)  return false;        // near-pure-black (rare in real photos)
+      return true;
+    });
+    const pick = (filtered[0] || dominants[0]);
+    if (!pick) return null;
+    return nearestPaletteColor(pick.rgb);
+  }
+
   window.extractDominantColors = extractDominantColors;
   window.suggestItemsFromPhoto = suggestItemsFromPhoto;
+  window.nearestPaletteColorFromImage = nearestPaletteColorFromImage;
 })();
 
 

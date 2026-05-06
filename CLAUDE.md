@@ -87,6 +87,30 @@ above and ship in the next DEPLOY.ps1 push.
   Future iterations: option B (TF.js MobileNet visual similarity) or C
   (cloud vision API once a backend exists).
 
+**Last shipped (2026-05-06 morning — v41):**
+- Bundle: `dist/app.bundle.js?v=1778080253435`, cache `virtual-closet-v41`
+- **Photo-derived `paletteColor` for the Insights → Colors chart.** Brand
+  names like "Anthracite / XS", "Bluestone", "Light Provence Blue", "Deep
+  Porcelain Skin Suede" no longer fall into the long "Other" tail. The
+  item's photo is run through `nearestPaletteColorFromImage` (new helper
+  in `photo-suggest-r1.js`) which extracts dominant colors, drops near-
+  white background and near-black extremes, and returns the closest
+  canonical palette name (Navy, Olive, Charcoal, etc.). Stored in a NEW
+  field `item.paletteColor` — the user's original `item.color` purchase
+  name stays untouched.
+- **Insights → Colors uses paletteColor first**, falling back to
+  `normalizeColor(item.color)` for items without it.
+- **"Sync colors from photos" button** appears on the Insights → Colors
+  tab below the chart whenever there are items with photos but no
+  `paletteColor`. Click runs the backfill in chunks (yields every 5
+  items so the UI stays responsive), shows live progress, then
+  re-renders the chart.
+- **Add Item** automatically derives paletteColor from the new photo, so
+  going forward every newly added item is tagged at save time.
+- Edit-flow doesn't yet auto-derive — if she wants to refresh paletteColor
+  on edited items, the Sync button on Insights handles it. Could be
+  added in v42 if useful.
+
 **Last shipped (2026-05-06 morning — v40):**
 - Bundle: `dist/app.bundle.js?v=1778076064966`, cache `virtual-closet-v40`
 - **Sold items move to Returned & Sold page** — `isActiveItem` in
