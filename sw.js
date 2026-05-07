@@ -1,12 +1,13 @@
-// sw.js — Virtual Closet service worker
+// sw.js — That's My Freaking Closet service worker
 // Caches the shell + JS/CSS for offline use. Bumps on each release via CACHE_NAME.
 
-const CACHE_NAME = 'virtual-closet-v43';
+const CACHE_NAME = 'tmfcloset-v44';
 const SHELL = [
   './',
   './index.html',
   './styles.css',
   './editorial.css',
+  './style-guide-r1.css',
   './manifest.json',
   './icon-192.svg',
   './icon-512.svg',

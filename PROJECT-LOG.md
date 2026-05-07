@@ -2188,4 +2188,167 @@ project root nor `hugo-site/` has a clean copy.
 - Pick a brand from slide 13 and update slides 1, 4, and 16 to match
 - Replace placeholder funding amount on slide 15 with a real number
 - Replace founder name "ChrTif" / initials "CT" / bio on slide 14
-- Continue adding the rest of the wardrobe — current impor
+- Continue adding the rest of the wardrobe — current import is just the
+  Lululemon items from the PDF; user mentioned more clothes to come
+- The lifestyle tags on imported items default to "Activewear/Sportswear" —
+  some pieces (Classic-Fit Cotton-Blend Long-Sleeve Shirt, Satin Midi Skirt)
+  could use Business or Formal added
+- Mobile-app conversion is on the roadmap but not started; current site is
+  desktop-first
+
+## Notes / gotchas for future me
+
+- The Edit / Write tools have intermittently truncated files in this session
+  (the new file ends up the same byte count as the prior version, dropping
+  the tail). When that happens, rebuild the affected file via a `bash`
+  heredoc instead of using Edit/Write.
+- IndexedDB is **per file path** when the page is loaded via `file://`. If
+  the user opens `index.html` from a different folder, they'll see a
+  different (empty) closet. Worth keeping in mind if they ever say "my data
+  disappeared."
+- `sessionStorage` is cleared when the browser tab closes — that's
+  intentional for the review-walk-through queue, but means the "X items just
+  imported" banner won't persist across browser restarts.
+- The web search button uses `window.open(url, '_blank', 'noopener')`. Some
+  browsers/popup-blockers may suppress this if not triggered by a real click.
+
+---
+
+_This log is updated after every meaningful change to the project. If you're
+reading this in a future conversation, scan it before making changes — many
+of the small choices above were made for specific reasons._
+, no photo
+   derivation runs. The user's tag is trusted as-is. Photo derivation only
+   fires for non-canonical brand names, where it actually adds value.
+
+The Insights Sync button copy + filter were also updated to match —
+"could be re-categorized" only counts items whose user-supplied color
+isn't already canonical.
+
+**Bundle:** `dist/app.bundle.js?v=1778082071825` (41 sources, 507 KB).
+**Service worker:** `virtual-closet-v42`.
+
+### Phase 33 — v43: Click-through filter + alias fixes (2026-05-06)
+
+After v42 dropped, Tiffany walked through the buckets and flagged several
+mismatches that weren't pure photo-extraction noise — they were wrong
+**alias mappings** in `COLOR_ALIASES`. Plus, clicking the Light Blue
+slice showed "0 items" even though the legend said 2, because the closet
+filter and the chart used different logic.
+
+Three changes in v43:
+
+1. **`effectivePaletteColor(item)` helper in `data-r9.js`** — single
+   source of truth for "which canonical bucket does this item belong in?"
+   Both the Insights chart (`insights-r7.js`) and the closet color filter
+   (`closet-r10.js`) now call this same function. Click-through always
+   matches the count.
+2. **Alias remappings:** `Sunset Pink → Hot Pink`, `Jade Grey → Sage`,
+   `Sangria → Wine`, `Black Plum → Plum`, `Sour Grape/White/Green → Multi`,
+   `Lime → Neon Green`, `Furry Taupe → Mauve`, `Gravel → Tan`,
+   `Pink Red Floral → Multi`, `Fuchsia Marigold Tie-Dye → Multi`,
+   `Martini Print → Multi`, `Yellow Ditsy Floral → Multi`,
+   `Black Neon Floral → Multi`. All driven by what the actual photos
+   look like, not by literal-word interpretation.
+3. **Removed `Jet` and `Ink` aliases entirely.** On Vuori specifically
+   these names label navy garments, on other brands they're true black.
+   Leaving them un-aliased makes `effectivePaletteColor` fall through to
+   `paletteColor` (photo-derived) per item, which gets it right
+   individually.
+
+**Bundle:** `dist/app.bundle.js?v=1778083606168` (41 sources, 509 KB).
+**Service worker:** `virtual-closet-v43`.
+
+Edit-tool truncation footgun bit again on this ship — `insights-r7.js`,
+`closet-r10.js`, and `data-r9.js` all came back from Edit with their
+tails dropped. Recovery pattern that works: restore from the most recent
+bundle's section markers (each source delimited by
+`/* ===== js/<file> ===== */`), then re-apply the edit via Python's
+string replace instead of the Edit tool.
+
+---
+
+## Outstanding items / things the user may want next
+
+- Mobile-app conversion is on the roadmap but not started; current site
+  is desktop-first.
+- v44 candidates: Option C `totalPaid` field, paste paper-receipt
+  importer, auto-refresh `paletteColor` on Edit when the photo changes.
+
+## Notes / gotchas for future me
+
+- The Edit / Write tools have intermittently truncated files in this
+  session (the new file ends up with the tail dropped). When that
+  happens, restore from `dist/app.bundle.js` section markers and
+  re-apply edits via Python `str.replace`, not the Edit tool.
+- IndexedDB is **per file path** when the page is loaded via `file://`.
+  If the user opens `index.html` from a different folder, they'll see a
+  different (empty) closet.
+- Service worker requires manual unregister + clear site data after
+  every deploy. Plain Ctrl+Shift+R is not enough. IndexedDB checkbox
+  must stay OFF when clearing storage.
+- Bookmarklets are frozen at drag time. Patches to
+  `cartimport-r1.js` or `emailimport-r1.js` require re-dragging the
+  bookmark from its setup page.
+
+---
+
+_This log is updated after every meaningful change to the project._
+
+---
+
+## Phase 34 — v44: rebrand foundation + style guide CSS (2026-05-07)
+
+First half of the design refresh. Adds the locked design system as a new
+`style-guide-r1.css` and renames the brand from "Virtual Closet" to
+"That's My Freaking Closet" across user-facing strings. No existing
+components were restyled — Phase 2 (next ship) will rebuild the login
+screen + replace the left sidebar with a top nav + add the search modal.
+
+Bundle: `dist/app.bundle.js?v=1778083606168` (unchanged from v43 — no JS
+modified in this ship).
+Service worker cache: `tmfcloset-v44` (renamed prefix).
+
+### Files changed
+- `index.html` — `<title>` → "That's My Freaking Closet"; apple-mobile-web-
+  app-title → "TMF Closet"; brand-mark `VC` → `tmf`; brand-title (sidebar)
+  → "TMF Closet"; login-brand-title → "That's My Freaking Closet"; added
+  Cormorant Garamond Google Fonts link; added `style-guide-r1.css?v=...`
+  link.
+- `manifest.json` — name → "That's My Freaking Closet"; short_name → "TMF
+  Closet".
+- `sw.js` — `CACHE_NAME` `virtual-closet-v43` → `tmfcloset-v44`; added
+  `style-guide-r1.css` to SHELL precache list.
+- `style-guide-r1.css` (NEW) — locked design system: 12 palette variables,
+  `--tmf-font-display` (Cormorant Garamond) + `--tmf-font-body` (Inter),
+  8 scheme classes (`.scheme-cream` / `-blush` / `-sage` / `-soft-sea` /
+  `-bright-teal` / `-mediterranean` / `-terracotta` / `-charcoal`), 3
+  utility typography classes (`.tmf-eyebrow`, `.tmf-headline`,
+  `.tmf-body`), and one composer (`.tmf-scheme-hero`).
+
+### Locked design system
+- Default page bg: cream `#F9F4ED`. Body text: warm-black `#1F1F1D`.
+- Scheme map (page → scheme bg): Wishlist → blush; Outfits/Lookbook/
+  Capsule/Trip/StyleDNA → deep sage `#5C6554`; Daily/WearLog/Slideshow →
+  soft sea `#6B8B96`; Top10/Compare/ColorPairs/Rotation → bright teal
+  `#3D8B9D`; GirlMath/Insights → mediterranean `#2F7585`; Receipts/
+  EmailImport/CartImport/PasteReceipt → terracotta `#A66B4D`; Returned &
+  Sold → charcoal `#2D2D2D`. Everything else → cream.
+- Display typeface: Cormorant Garamond italic for headlines, regular for
+  ALL CAPS eyebrows with `letter-spacing: 0.32em`. Body: Inter.
+
+### Deferred to Phase 2 (next ship)
+- Rebuild login screen using the new tokens (cream scheme + italic
+  Cormorant tagline "Wear what you have. Buy what you *love*.").
+- Replace left sidebar with top horizontal nav (centered logo + hamburger
+  drawer + search 🔍 + account 👤).
+- Search modal — live-filter across items / wishlist / outfits / notes.
+- Apply scheme hero strips to each scheme-assigned page.
+- Update `js/app-r10.js` line 241 "Virtual Closet backup" error string →
+  "TMF Closet backup" (deferred to avoid bundle rebuild in this ship).
+
+### Risk profile
+Low. Phase 1 only ADDS the new style guide CSS file (its selectors are
+all `.tmf-*` and `.scheme-*`, no global overrides). No existing component
+selectors changed. If something breaks visually after deploy, the cause
+is almost certainly the cache buster — clear the service worker as usual.

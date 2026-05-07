@@ -1,6 +1,6 @@
 {
-  "name": "Virtual Closet",
-  "short_name": "Closet",
+  "name": "That's My Freaking Closet",
+  "short_name": "TMF Closet",
   "description": "Wear what you have. Buy what you love. A private, local-first wardrobe organizer.",
   "start_url": "./index.html",
   "scope": "./",

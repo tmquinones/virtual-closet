@@ -1,0 +1,176 @@
+/* ============================================================
+   That's My Freaking Closet — Style Guide v1
+   ------------------------------------------------------------
+   Locked design system: palette + typography + scheme system.
+   Phase 1 deliverable. Existing styles.css + editorial.css are
+   unchanged — this file ADDS the new design tokens without
+   restyling current components. Phase 2 will rebuild the login
+   screen and nav using these tokens.
+
+   Scheme map (background colors per page family):
+     cream         · default — Closet, Account, Profile, Browse
+     blush         · Wishlist
+     sage          · Outfits, Lookbook, Capsule, Trip, Style DNA
+     soft-sea      · Daily, Wear Log, Slideshow
+     bright-teal   · Top 10, Compare, Color Pairs, Rotation
+     mediterranean · Girl Math, Insights
+     terracotta    · Receipts, Email/Cart/Paste Importers
+     charcoal      · Returned & Sold
+============================================================ */
+
+:root {
+  /* ---- Palette --------------------------------------------- */
+  --tmf-cream:         #F9F4ED;
+  --tmf-blush:         #EFE2D6;
+  --tmf-warm-black:    #1F1F1D;
+  --tmf-warm-gray:     #C9BCA9;
+  --tmf-sage:          #7E8B73;
+  --tmf-deep-sage:     #5C6554;
+  --tmf-wood:          #8E6F4D;
+  --tmf-soft-sea:      #6B8B96;
+  --tmf-bright-teal:   #3D8B9D;
+  --tmf-mediterranean: #2F7585;
+  --tmf-terracotta:    #A66B4D;
+  --tmf-charcoal:      #2D2D2D;
+
+  /* ---- Typography ------------------------------------------ */
+  --tmf-font-display:  'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --tmf-font-body:     'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  --tmf-eyebrow-tracking: 0.32em;
+  --tmf-eyebrow-size:     11px;
+
+  /* ---- Active page scheme ---------------------------------- */
+  /* Default scheme is cream. A scheme-* class on <body> or a   */
+  /* wrapper overrides --tmf-scheme-bg / --tmf-scheme-fg.       */
+  --tmf-scheme-bg:    var(--tmf-cream);
+  --tmf-scheme-fg:    var(--tmf-warm-black);
+  --tmf-scheme-muted: rgba(31, 31, 29, 0.65);
+}
+
+/* ============================================================
+   Scheme classes
+   Apply one of these to <body> or a section wrapper to switch
+   the page's mood. The hero strip + utility classes below pick
+   up the scheme automatically via custom properties.
+============================================================ */
+
+.scheme-cream {
+  --tmf-scheme-bg:    var(--tmf-cream);
+  --tmf-scheme-fg:    var(--tmf-warm-black);
+  --tmf-scheme-muted: rgba(31, 31, 29, 0.65);
+}
+.scheme-blush {
+  --tmf-scheme-bg:    var(--tmf-blush);
+  --tmf-scheme-fg:    var(--tmf-warm-black);
+  --tmf-scheme-muted: rgba(31, 31, 29, 0.65);
+}
+.scheme-sage {
+  --tmf-scheme-bg:    var(--tmf-deep-sage);
+  --tmf-scheme-fg:    var(--tmf-cream);
+  --tmf-scheme-muted: rgba(249, 244, 237, 0.7);
+}
+.scheme-soft-sea {
+  --tmf-scheme-bg:    var(--tmf-soft-sea);
+  --tmf-scheme-fg:    var(--tmf-cream);
+  --tmf-scheme-muted: rgba(249, 244, 237, 0.75);
+}
+.scheme-bright-teal {
+  --tmf-scheme-bg:    var(--tmf-bright-teal);
+  --tmf-scheme-fg:    var(--tmf-cream);
+  --tmf-scheme-muted: rgba(249, 244, 237, 0.75);
+}
+.scheme-mediterranean {
+  --tmf-scheme-bg:    var(--tmf-mediterranean);
+  --tmf-scheme-fg:    var(--tmf-cream);
+  --tmf-scheme-muted: rgba(249, 244, 237, 0.75);
+}
+.scheme-terracotta {
+  --tmf-scheme-bg:    var(--tmf-terracotta);
+  --tmf-scheme-fg:    var(--tmf-cream);
+  --tmf-scheme-muted: rgba(249, 244, 237, 0.75);
+}
+.scheme-charcoal {
+  --tmf-scheme-bg:    var(--tmf-charcoal);
+  --tmf-scheme-fg:    var(--tmf-cream);
+  --tmf-scheme-muted: rgba(249, 244, 237, 0.7);
+}
+
+/* ============================================================
+   Typography utilities
+   Compose headlines without restyling individual elements.
+   Color always inherits, so these work on any scheme.
+============================================================ */
+
+.tmf-eyebrow {
+  font-family:    var(--tmf-font-display);
+  font-size:      var(--tmf-eyebrow-size);
+  font-weight:    500;
+  letter-spacing: var(--tmf-eyebrow-tracking);
+  text-transform: uppercase;
+  color: inherit;
+  margin: 0 0 0.5rem;
+}
+
+.tmf-headline {
+  font-family: var(--tmf-font-display);
+  font-style:  italic;
+  font-weight: 400;
+  font-size:   36px;
+  line-height: 1.15;
+  color: inherit;
+  margin: 0;
+}
+.tmf-headline--lg { font-size: 56px; }
+.tmf-headline--md { font-size: 36px; }
+.tmf-headline--sm { font-size: 24px; }
+
+.tmf-body {
+  font-family: var(--tmf-font-body);
+  font-size:   14px;
+  line-height: 1.65;
+  color: inherit;
+}
+.tmf-body em {
+  font-family: var(--tmf-font-display);
+  font-style:  italic;
+  font-size:   1.1em;
+}
+
+/* ============================================================
+   Scheme hero strip
+   Drop at the top of any non-cream page to set the scheme mood.
+   Inherits the active scheme via custom properties.
+============================================================ */
+
+.tmf-scheme-hero {
+  background: var(--tmf-scheme-bg);
+  color:      var(--tmf-scheme-fg);
+  padding:    4rem 2rem 3rem;
+}
+
+.tmf-scheme-hero__eyebrow {
+  font-family:    var(--tmf-font-display);
+  font-size:      var(--tmf-eyebrow-size);
+  font-weight:    500;
+  letter-spacing: var(--tmf-eyebrow-tracking);
+  text-transform: uppercase;
+  margin: 0 0 0.5rem;
+  opacity: 0.85;
+}
+
+.tmf-scheme-hero__headline {
+  font-family: var(--tmf-font-display);
+  font-style:  italic;
+  font-weight: 400;
+  font-size:   clamp(28px, 4vw, 48px);
+  line-height: 1.15;
+  margin: 0;
+}
+
+/* ============================================================
+   Phase 2 will add component styles here (login screen, top
+   nav, hamburger drawer, search modal). Until then, existing
+   styles in styles.css + editorial.css continue to drive every
+   visible component.
+============================================================ */
