@@ -1,5 +1,5 @@
-/* TMF Closet bundle — built 2026-05-07 23:14:00 */
-/* Sources (in order, 41): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js */
+/* TMF Closet bundle — built 2026-05-07 23:37:29 */
+/* Sources (in order, 42): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -11610,6 +11610,100 @@ function rotationDayHtml(day) {
     syncDrawerActive();
     window.addEventListener('hashchange', syncDrawerActive);
     setInterval(syncDrawerItemCount, 1500);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+
+/* ===== js/scheme-r1.js ===== */
+// scheme-r1.js — Per-route scheme + page hero (Phase 2B.1)
+// ----------------------------------------------------------
+// Listens for hashchange and applies a scheme-* class to <body>
+// (drives --tmf-scheme-bg / --tmf-scheme-fg via style-guide-r1.css)
+// plus updates the .page-hero eyebrow + headline text. The scheme
+// class also colors anything else in the app that uses the
+// --tmf-scheme-* custom properties.
+//
+// HTML elements this module touches:
+//   #pageHero           — outer container (gets the scheme bg via CSS var)
+//   #pageHeroEyebrow    — small all-caps title above the headline
+//   #pageHeroHeadline   — italic Cormorant headline
+
+(function () {
+  'use strict';
+
+  var PAGES = {
+    'closet':        { scheme: 'scheme-cream',         eyebrow: 'THE CLOSET.',       headline: 'Find what you love.' },
+    'browse':        { scheme: 'scheme-cream',         eyebrow: 'BROWSE.',           headline: 'Shop by every angle.' },
+    'add':           { scheme: 'scheme-cream',         eyebrow: 'NEW ARRIVAL.',      headline: 'Add it to the record.' },
+    'shop':          { scheme: 'scheme-cream',         eyebrow: 'SHOP.',             headline: 'Find what fills the gap.' },
+
+    'wishlist':      { scheme: 'scheme-blush',         eyebrow: 'THE WISHLIST.',     headline: 'What you’re building toward.' },
+
+    'outfits':       { scheme: 'scheme-sage',          eyebrow: 'OUTFITS.',          headline: 'Saved looks, ready to wear.' },
+    'build':         { scheme: 'scheme-sage',          eyebrow: 'BUILD AN OUTFIT.',  headline: 'Mix what you own.' },
+    'capsule':       { scheme: 'scheme-sage',          eyebrow: 'CAPSULE.',          headline: 'A focused wardrobe.' },
+    'trip':          { scheme: 'scheme-sage',          eyebrow: 'TRIP PLANNER.',     headline: 'Pack with intention.' },
+    'styledna':      { scheme: 'scheme-sage',          eyebrow: 'STYLE DNA.',        headline: 'Your patterns, mapped.' },
+    'lookbook':      { scheme: 'scheme-sage',          eyebrow: 'LOOKBOOK.',         headline: 'Build your story.' },
+
+    'daily':         { scheme: 'scheme-soft-sea',      eyebrow: 'TODAY.',            headline: 'What you’re wearing now.' },
+    'slideshow':     { scheme: 'scheme-soft-sea',      eyebrow: 'WEAR LOG.',         headline: 'Every day, on the record.' },
+    'returns-due':   { scheme: 'scheme-soft-sea',      eyebrow: 'RETURNS DUE.',      headline: 'Don’t miss the window.' },
+
+    'top10':         { scheme: 'scheme-bright-teal',   eyebrow: 'MY TOP 10.',        headline: 'The pieces that earn their keep.' },
+    'compare':       { scheme: 'scheme-bright-teal',   eyebrow: 'COMPARE.',          headline: 'Side by side.' },
+    'colorpairs':    { scheme: 'scheme-bright-teal',   eyebrow: 'COLOR PAIRS.',      headline: 'What goes with what.' },
+    'rotation':      { scheme: 'scheme-bright-teal',   eyebrow: 'ROTATION.',         headline: 'Worn, not just owned.' },
+
+    'insights':      { scheme: 'scheme-mediterranean', eyebrow: 'INSIGHTS.',         headline: 'What your closet says.' },
+    'girlmath':      { scheme: 'scheme-mediterranean', eyebrow: 'GIRL MATH.',        headline: 'Track every dollar.' },
+    'notes':         { scheme: 'scheme-mediterranean', eyebrow: 'MY NOTES.',         headline: 'Quiet observations.' },
+
+    'receipts':      { scheme: 'scheme-terracotta',    eyebrow: 'RECEIPTS.',         headline: 'The paper trail.' },
+    'cart-import':   { scheme: 'scheme-terracotta',    eyebrow: 'CART IMPORTER.',    headline: 'Pull from where you shop.' },
+    'email-import':  { scheme: 'scheme-terracotta',    eyebrow: 'EMAIL IMPORTER.',   headline: 'Receipts straight from your inbox.' },
+    'paste-receipt': { scheme: 'scheme-terracotta',    eyebrow: 'PASTE A RECEIPT.',  headline: 'Type it in, save it forever.' },
+
+    'returned':      { scheme: 'scheme-charcoal',      eyebrow: 'THE RECORD.',       headline: 'What’s already happened.' }
+  };
+
+  var DEFAULT = PAGES.closet;
+  var SCHEME_CLASSES = [
+    'scheme-cream', 'scheme-blush', 'scheme-sage', 'scheme-soft-sea',
+    'scheme-bright-teal', 'scheme-mediterranean', 'scheme-terracotta', 'scheme-charcoal'
+  ];
+
+  function getRouteFromHash() {
+    var hash = location.hash || '';
+    var m = hash.match(/^#\/([^?\/]+)/);
+    return m ? m[1] : 'closet';
+  }
+
+  function applyForRoute() {
+    var route = getRouteFromHash();
+    var page = PAGES[route] || DEFAULT;
+
+    // Swap scheme class on <body>. Removes any previous scheme-*.
+    var body = document.body;
+    SCHEME_CLASSES.forEach(function (c) { body.classList.remove(c); });
+    body.classList.add(page.scheme);
+
+    // Update hero text
+    var eb = document.getElementById('pageHeroEyebrow');
+    var hl = document.getElementById('pageHeroHeadline');
+    if (eb) eb.textContent = page.eyebrow;
+    if (hl) hl.textContent = page.headline;
+  }
+
+  function init() {
+    applyForRoute();
+    window.addEventListener('hashchange', applyForRoute);
   }
 
   if (document.readyState === 'loading') {

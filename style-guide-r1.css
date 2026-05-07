@@ -649,4 +649,50 @@ body.drawer-open { overflow: hidden; }
 @media (max-width: 600px) {
   .top-header { padding: 12px 16px; }
   .top-wordmark { font-size: 18px; }
-  .account-dropdown { right: 12px; top: 56px; 
+  .account-dropdown { right: 12px; top: 56px; }
+}
+
+/* ============================================================
+   Components — Page hero strip (Phase 2B.1)
+   ------------------------------------------------------------
+   A scheme-colored band immediately under .top-header with the
+   page's eyebrow + italic headline. scheme-r1.js sets a
+   scheme-* class on <body> per route, which flows through the
+   --tmf-scheme-* custom properties to color this band.
+============================================================ */
+
+.page-hero {
+  background: var(--tmf-scheme-bg);
+  color: var(--tmf-scheme-fg);
+  padding: 2rem 2rem 1.6rem;
+  transition: background 250ms ease, color 250ms ease;
+}
+
+.page-hero-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.page-hero-eyebrow {
+  font-family: var(--tmf-font-display);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  margin: 0 0 6px;
+  opacity: 0.85;
+}
+
+.page-hero-headline {
+  font-family: var(--tmf-font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(24px, 3.5vw, 36px);
+  line-height: 1.2;
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .page-hero {
+    padding: 1.4rem 1.2rem 1.1rem;
+  
