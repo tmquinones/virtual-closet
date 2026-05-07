@@ -162,4 +162,118 @@
         </a>
         <a href="#/trip" class="nav-link" data-route="trip">
           <span class="nav-icon">✈</span>
-          <span>Trip Pla
+          <span>Trip Planner</span>
+        </a>
+        <a href="#/build" class="nav-link" data-route="build">
+          <span class="nav-icon">✦</span>
+          <span>Build Outfit</span>
+        </a>
+        <a href="#/daily" class="nav-link" data-route="daily">
+          <span class="nav-icon">☼</span>
+          <span>Daily Log</span>
+        </a>
+        <a href="#/slideshow" class="nav-link" data-route="slideshow">
+          <span class="nav-icon">▷</span>
+          <span>Wear Log</span>
+        </a>
+        <a href="#/receipts" class="nav-link" data-route="receipts">
+          <span class="nav-icon">⎙</span>
+          <span>Receipts</span>
+        </a>
+        <a href="#/notes" class="nav-link" data-route="notes">
+          <span class="nav-icon">✎</span>
+          <span>My Notes</span>
+        </a>
+        <a href="#/returns-due" class="nav-link" data-route="returns-due">
+          <span class="nav-icon">⏰</span>
+          <span>Returns Due</span>
+        </a>
+        <a href="#/shop" class="nav-link" data-route="shop">
+          <span class="nav-icon">🛍</span>
+          <span>Shop</span>
+        </a>
+        <a href="#/top10" class="nav-link" data-route="top10">
+          <span class="nav-icon">★</span>
+          <span>My Top 10</span>
+        </a>
+        <a href="#/cart-import" class="nav-link" data-route="cart-import">
+          <span class="nav-icon">⚡</span>
+          <span>Cart Importer</span>
+        </a>
+        <a href="#/email-import" class="nav-link" data-route="email-import">
+          <span class="nav-icon">📧</span>
+          <span>Email Importer</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="theme-toggle" id="themeToggle">
+          <button data-theme="theme-bw" class="active">B&amp;W</button>
+          <button data-theme="theme-warm">Warm</button>
+          <button data-theme="theme-dark">Dark</button>
+        </div>
+        <button class="btn btn-ghost btn-block" id="exportBtn">Export Backup</button>
+        <label class="btn btn-ghost btn-block" for="importInput">Import Backup</label>
+        <input type="file" id="importInput" accept="application/json" hidden />
+      </div>
+    </aside>
+
+    <main class="main" id="main">
+      <!-- Views render here -->
+    </main>
+  </div>
+
+
+  <!-- Login screen (full-screen overlay shown when no session) -->
+  <div class="login-overlay" id="loginOverlay" hidden>
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand-mark">tmf</div>
+        <div>
+          <div class="login-brand-title">That's My Freaking Closet</div>
+          <div class="login-brand-tag">Wear what you <em>have</em>. Buy what you <em>love</em>.</div>
+        </div>
+      </div>
+      <div class="login-tabs">
+        <button class="login-tab active" data-tab="signin">Sign in</button>
+        <button class="login-tab" data-tab="signup">Create account</button>
+      </div>
+      <form class="login-form" id="loginForm" autocomplete="off">
+        <div class="field">
+          <label class="field-label" for="loginUsername">Username</label>
+          <input class="input" id="loginUsername" type="text" autocapitalize="none" required />
+        </div>
+        <div class="field">
+          <label class="field-label" for="loginPassword">Password</label>
+          <input class="input" id="loginPassword" type="password" required />
+        </div>
+        <div class="login-error" id="loginError" hidden></div>
+        <button class="btn btn-primary btn-block" id="loginSubmit" type="submit">Sign in</button>
+        <p class="login-footnote" id="loginFootnote">
+          Accounts are stored on this device only. Each account has its own private closet.
+        </p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Item detail modal -->
+  <div class="modal" id="modal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel" id="modalPanel">
+      <button class="modal-close" data-close aria-label="Close">×</button>
+      <div class="modal-content" id="modalContent"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" hidden></div>
+  <script src="dist/app.bundle.js?v=1778280000000"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
