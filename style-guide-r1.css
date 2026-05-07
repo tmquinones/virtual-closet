@@ -186,7 +186,7 @@
 ============================================================ */
 
 .login-overlay {
-  background: var(--tmf-cream);
+  background: var(--tmf-deep-sage);
 }
 
 .login-card {
@@ -372,5 +372,4 @@
   }
   .login-brand-tag {
     font-size: 14.5px;
-  }
-}
+  
