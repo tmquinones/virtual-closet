@@ -2352,3 +2352,43 @@ Low. Phase 1 only ADDS the new style guide CSS file (its selectors are
 all `.tmf-*` and `.scheme-*`, no global overrides). No existing component
 selectors changed. If something breaks visually after deploy, the cause
 is almost certainly the cache buster — clear the service worker as usual.
+
+---
+
+## Phase 34A — v46: login screen redesign (2026-05-07)
+
+First Phase 2 ship. Redesigns the login screen on the locked design
+system: cream scheme, italic Cormorant title, italic tagline with
+em-emphasized "have" / "love", thin underline tabs (replacing the prior
+pill toggle), thin-bordered form fields with all-caps labels, charcoal
+all-caps submit button. Existing HTML class structure preserved for JS
+compatibility — only visual treatment changed via CSS overrides in
+style-guide-r1.css.
+
+Bundle: `dist/app.bundle.js?v=1778083606168` (unchanged — no JS modified).
+Service worker cache: `tmfcloset-v46`.
+
+### Files changed
+- `index.html` — wrapped "have" and "love" in `<em>` tags inside the
+  login-brand-tag, bumped style-guide-r1.css cache buster to
+  `?v=1778260000000`.
+- `sw.js` — `CACHE_NAME` `tmfcloset-v45` → `tmfcloset-v46`.
+- `style-guide-r1.css` — appended ~150 lines of "Components — Login
+  screen" CSS overriding `.login-overlay`, `.login-card`, `.login-brand`,
+  `.login-brand-title`, `.login-brand-tag` (with `em` styling),
+  `.login-tabs` + `.login-tab` (underline pattern), `.login-form` field
+  + label + input styles, `.login-error` (terracotta tint),
+  `#loginSubmit.btn-primary` (charcoal + all-caps), `.login-footnote`.
+  Mobile tweaks at `max-width: 600px`.
+
+### What did NOT change
+- Login DOM structure / class names / IDs — preserved for JS
+  compatibility.
+- Form behavior / sign-in handler / signup tab toggle — JS untouched.
+- Every other page (Closet, Wishlist, etc.) — Phase 2B-D work.
+- Bundle (`dist/app.bundle.js`) — no JS modified.
+
+### What ships next (Phase 2B)
+- Replace left sidebar with top horizontal nav.
+- Add hamburger drawer (grouped pages).
+- Add search button placeholder.

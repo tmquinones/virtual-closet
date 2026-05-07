@@ -174,3 +174,203 @@
    styles in styles.css + editorial.css continue to drive every
    visible component.
 ============================================================ */
+
+/* ============================================================
+   Components — Login screen (Phase 2A)
+   ------------------------------------------------------------
+   Overrides existing .login-* rules in styles.css with the
+   locked design system applied. The HTML structure of the
+   login overlay is unchanged — only its visual treatment is
+   reset here. Cascade order matters: style-guide-r1.css must
+   load AFTER styles.css in index.html for these rules to win.
+============================================================ */
+
+.login-overlay {
+  background: var(--tmf-cream);
+}
+
+.login-card {
+  background: var(--tmf-cream);
+  border: 0.5px solid var(--tmf-warm-gray);
+  border-radius: 4px;
+  box-shadow: none;
+  padding: 56px 44px 40px;
+  max-width: 460px;
+}
+
+.login-brand {
+  display: block;
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-brand .brand-mark {
+  margin: 0 auto 20px;
+  width: 40px;
+  height: 40px;
+  background: var(--tmf-warm-black);
+  color: var(--tmf-cream);
+  display: grid;
+  place-items: center;
+  font-family: var(--tmf-font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 16px;
+  border-radius: 2px;
+}
+
+.login-brand-title {
+  font-family: var(--tmf-font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: -0.005em;
+  color: var(--tmf-warm-black);
+  margin: 0;
+}
+
+.login-brand-tag {
+  font-family: var(--tmf-font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--tmf-warm-black);
+  margin: 14px 0 0;
+}
+
+.login-brand-tag em {
+  font-style: italic;
+  font-weight: 500;
+}
+
+/* Tabs — thin underline replacing the pill treatment */
+.login-tabs {
+  background: transparent;
+  border: none;
+  border-bottom: 0.5px solid var(--tmf-warm-gray);
+  padding: 0;
+  gap: 0;
+  margin-bottom: 28px;
+  border-radius: 0;
+}
+
+.login-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid transparent;
+  padding: 12px 8px;
+  font-family: var(--tmf-font-body);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(31, 31, 29, 0.55);
+  cursor: pointer;
+  margin-bottom: -0.5px;
+  border-radius: 0;
+  box-shadow: none;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.login-tab.active {
+  background: transparent;
+  border-bottom-color: var(--tmf-warm-black);
+  color: var(--tmf-warm-black);
+  box-shadow: none;
+}
+
+.login-tab:not(.active):hover {
+  color: var(--tmf-warm-black);
+}
+
+/* Form fields */
+.login-form {
+  gap: 20px;
+}
+
+.login-form .field-label {
+  display: block;
+  font-family: var(--tmf-font-body);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--tmf-warm-black);
+  margin-bottom: 8px;
+}
+
+.login-form .input {
+  background: transparent;
+  border: 0.5px solid var(--tmf-warm-gray);
+  border-radius: 2px;
+  padding: 12px 14px;
+  font-family: var(--tmf-font-body);
+  font-size: 14px;
+  color: var(--tmf-warm-black);
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 150ms ease;
+}
+
+.login-form .input:focus {
+  outline: none;
+  border-color: var(--tmf-warm-black);
+}
+
+.login-error {
+  background: rgba(166, 107, 77, 0.12);
+  border: 0.5px solid var(--tmf-terracotta);
+  color: var(--tmf-terracotta);
+  font-family: var(--tmf-font-body);
+  font-size: 12.5px;
+  padding: 10px 14px;
+  border-radius: 2px;
+  margin: 0;
+}
+
+/* Primary submit button */
+#loginSubmit.btn-primary {
+  background: var(--tmf-warm-black);
+  color: var(--tmf-cream);
+  font-family: var(--tmf-font-body);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  padding: 16px 24px;
+  border: none;
+  border-radius: 2px;
+  margin-top: 8px;
+  transition: opacity 150ms ease;
+  cursor: pointer;
+}
+
+#loginSubmit.btn-primary:hover {
+  opacity: 0.85;
+}
+
+.login-footnote {
+  font-family: var(--tmf-font-display);
+  font-style: italic;
+  font-size: 13px;
+  color: rgba(31, 31, 29, 0.55);
+  text-align: center;
+  margin: 24px 0 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 600px) {
+  .login-card {
+    padding: 44px 28px 32px;
+    margin: 16px;
+  }
+  .login-brand-title {
+    font-size: 26px;
+  }
+  .login-brand-tag {
+    font-size: 14.5px;
+  }
+}
