@@ -695,4 +695,52 @@ body.drawer-open { overflow: hidden; }
 @media (max-width: 600px) {
   .page-hero {
     padding: 1.4rem 1.2rem 1.1rem;
+  }
+}
+
+/* ============================================================
+   Phase 2B.2 — Scheme spread to body + bigger page hero
+   ------------------------------------------------------------
+   Each scheme now defines --tmf-page-bg (a body-friendly tint
+   of the scheme color) so the whole page gets the scheme mood,
+   not just the hero band. Light schemes use full intensity;
+   dark schemes use a soft 10% blend over cream to keep the
+   existing white content cards readable.
+============================================================ */
+
+.scheme-cream         { --tmf-page-bg: var(--tmf-cream); }
+.scheme-blush         { --tmf-page-bg: var(--tmf-blush); }
+.scheme-sage          { --tmf-page-bg: #ECE9DF; }
+.scheme-soft-sea      { --tmf-page-bg: #E8ECEC; }
+.scheme-bright-teal   { --tmf-page-bg: #E5EBEC; }
+.scheme-mediterranean { --tmf-page-bg: #E4E9EA; }
+.scheme-terracotta    { --tmf-page-bg: #F0E4D9; }
+.scheme-charcoal      { --tmf-page-bg: #E8E4DC; }
+
+body {
+  background: var(--tmf-page-bg, var(--tmf-cream));
+  transition: background 250ms ease;
+}
+
+/* Bigger, more confident page hero so the scheme color reads
+   as a real chapter break, not just a thin strip. */
+.page-hero {
+  padding: 3.5rem 2rem 2.8rem;
+}
+
+.page-hero-eyebrow {
+  font-size: 12px;
+  margin: 0 0 10px;
+}
+
+.page-hero-headline {
+  font-size: clamp(28px, 4vw, 44px);
+}
+
+@media (max-width: 600px) {
+  .page-hero {
+    padding: 2rem 1.2rem 1.6rem;
+  }
+  .page-hero-headline {
+    font-size: 26px;
   
