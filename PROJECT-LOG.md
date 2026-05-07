@@ -2392,3 +2392,75 @@ Service worker cache: `tmfcloset-v46`.
 - Replace left sidebar with top horizontal nav.
 - Add hamburger drawer (grouped pages).
 - Add search button placeholder.
+
+---
+
+## Phase 34B — v48: top nav + hamburger drawer (Phase 2B) (2026-05-07)
+
+Major structural change. Replaces the left sidebar (visually) with a
+sticky top header and a slide-in hamburger drawer. The 21-link flat
+sidebar nav becomes 7 grouped sections in the drawer. Account access
+moves from the sidebar's user block to a dropdown anchored under the
+account button in the top header.
+
+The legacy `.sidebar` element is kept in the DOM but hidden with
+`display: none !important` so existing JS that targets sidebar IDs
+(`#sidebarUser`, `#sidebarUserName`, `#itemCount`, `#signOutBtn`,
+`#exportBtn`, `#importInput`, `#themeToggle`) continues to work
+without any changes. The drawer's Sign Out / Export / Import buttons
+proxy click events to those hidden elements in `drawer-r1.js`.
+
+Bundle: `dist/app.bundle.js?v=1778280000000` (40 sources now — added
+`js/drawer-r1.js` at the end).
+Service worker cache: `tmfcloset-v48`.
+
+### Files changed
+- `index.html` — inserted `<header class="top-header">` and
+  `<aside class="drawer">` blocks before the existing `<aside
+  class="sidebar">`. The `.app` wrapper's children are now: top
+  header, drawer, hidden sidebar, main. Bumped style-guide cache
+  buster + bundle cache buster to `?v=1778280000000`.
+- `js/drawer-r1.js` (NEW) — drawer open/close, account dropdown,
+  click-outside-to-close, ESC handlers, click-proxies for Sign
+  Out / Export / Import, hashchange-driven active-link sync,
+  periodic item-count mirror from `#itemCount` to
+  `#drawerItemCount`.
+- `style-guide-r1.css` — appended ~210 lines of "Components — Top
+  nav + drawer" CSS: hides legacy sidebar, restyles `.app` to flex
+  column, adds `.top-header` / `.top-action` / `.top-wordmark`
+  styles, full account-dropdown styling, full drawer overlay +
+  panel + group + link styles, mobile breakpoint.
+- `dist/app.bundle.js` — rebuilt with `drawer-r1.js` appended.
+- `sw.js` — `CACHE_NAME` `tmfcloset-v47` → `tmfcloset-v48`.
+
+### Drawer group map (7 groups, 21 items)
+- My Closet · Closet, Wishlist, Add Item, Browse
+- Daily · Daily Log, Wear Log, Returns Due
+- Plan · Outfits, Build Outfit, Capsule, Trip Planner, Compare
+- Insights · Insights, Girl Math, My Top 10, My Notes
+- Records · Returned & Sold, Receipts
+- Imports · Cart Importer, Email Importer
+- Shop · Shop
+
+### What did NOT change in this ship
+- All existing routes still work via their original `<a href="#/...">`
+  hash links. Drawer links use the same hrefs.
+- All existing app functionality is unaffected by the visual change
+  (sign-in / sign-up / item add / wishlist / etc.).
+- Theme toggle is temporarily inaccessible (it lived in the sidebar
+  footer and we haven't moved it). Phase 2C or later will add it
+  to the account dropdown or a settings page.
+
+### Phase 2C is next
+- Search button → modal with live-filter across items / wishlist /
+  outfits / notes.
+
+### Risk / known gotchas
+- The first-time deploy will require unregistering the service
+  worker AND clearing site data (IndexedDB OFF) so the new bundle
+  + new SW cache load fresh.
+- If anything breaks the closet view, the most likely cause is the
+  `.app { display: flex; flex-direction: column }` override
+  conflicting with prior grid layout in styles.css. Rolling back
+  by removing the override + un-hiding the sidebar restores the
+  prior state.

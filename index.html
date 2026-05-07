@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style-guide-r1.css?v=1778270000000" />
+  <link rel="stylesheet" href="style-guide-r1.css?v=1778280000000" />
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#1c1c1c" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -20,6 +20,91 @@
 </head>
 <body>
   <div class="app">
+    <header class="top-header" id="topHeader">
+      <button class="top-action top-hamburger" id="drawerToggle" aria-label="Open menu">
+        <span class="top-action-icon">≡</span>
+      </button>
+      <div class="top-wordmark">tmf</div>
+      <div class="top-action-group">
+        <button class="top-action" id="searchToggle" aria-label="Search">
+          <span class="top-action-icon">⌕</span>
+        </button>
+        <button class="top-action" id="accountToggle" aria-label="Account">
+          <span class="top-action-icon">○</span>
+        </button>
+      </div>
+      <div class="account-dropdown" id="accountDropdown" hidden>
+        <div class="account-username" id="accountUsername"></div>
+        <button class="btn btn-ghost btn-block" id="accountSignOut">Sign out</button>
+      </div>
+    </header>
+
+    <aside class="drawer" id="drawer" hidden>
+      <div class="drawer-backdrop" id="drawerBackdrop"></div>
+      <div class="drawer-panel">
+        <div class="drawer-head">
+          <div class="drawer-brand">
+            <div class="brand-mark">tmf</div>
+            <div class="drawer-brand-text">
+              <div class="drawer-brand-title">TMF Closet</div>
+              <div class="drawer-brand-subtitle"><span id="drawerItemCount">—</span> pieces</div>
+            </div>
+          </div>
+          <button class="drawer-close" id="drawerClose" aria-label="Close menu">×</button>
+        </div>
+
+        <nav class="drawer-nav">
+          <div class="drawer-group">
+            <div class="drawer-group-label">My Closet</div>
+            <a href="#/closet" class="drawer-link" data-route="closet">Closet</a>
+            <a href="#/wishlist" class="drawer-link" data-route="wishlist">Wishlist</a>
+            <a href="#/add" class="drawer-link" data-route="add">Add Item</a>
+            <a href="#/browse" class="drawer-link" data-route="browse">Browse</a>
+          </div>
+          <div class="drawer-group">
+            <div class="drawer-group-label">Daily</div>
+            <a href="#/daily" class="drawer-link" data-route="daily">Daily Log</a>
+            <a href="#/slideshow" class="drawer-link" data-route="slideshow">Wear Log</a>
+            <a href="#/returns-due" class="drawer-link" data-route="returns-due">Returns Due</a>
+          </div>
+          <div class="drawer-group">
+            <div class="drawer-group-label">Plan</div>
+            <a href="#/outfits" class="drawer-link" data-route="outfits">Outfits</a>
+            <a href="#/build" class="drawer-link" data-route="build">Build Outfit</a>
+            <a href="#/capsule" class="drawer-link" data-route="capsule">Capsule</a>
+            <a href="#/trip" class="drawer-link" data-route="trip">Trip Planner</a>
+            <a href="#/compare" class="drawer-link" data-route="compare">Compare</a>
+          </div>
+          <div class="drawer-group">
+            <div class="drawer-group-label">Insights</div>
+            <a href="#/insights" class="drawer-link" data-route="insights">Insights</a>
+            <a href="#/girlmath" class="drawer-link" data-route="girlmath">Girl Math</a>
+            <a href="#/top10" class="drawer-link" data-route="top10">My Top 10</a>
+            <a href="#/notes" class="drawer-link" data-route="notes">My Notes</a>
+          </div>
+          <div class="drawer-group">
+            <div class="drawer-group-label">Records</div>
+            <a href="#/returned" class="drawer-link" data-route="returned">Returned &amp; Sold</a>
+            <a href="#/receipts" class="drawer-link" data-route="receipts">Receipts</a>
+          </div>
+          <div class="drawer-group">
+            <div class="drawer-group-label">Imports</div>
+            <a href="#/cart-import" class="drawer-link" data-route="cart-import">Cart Importer</a>
+            <a href="#/email-import" class="drawer-link" data-route="email-import">Email Importer</a>
+          </div>
+          <div class="drawer-group">
+            <div class="drawer-group-label">Shop</div>
+            <a href="#/shop" class="drawer-link" data-route="shop">Shop</a>
+          </div>
+        </nav>
+
+        <div class="drawer-footer">
+          <button class="btn btn-ghost btn-block btn-sm" id="drawerExportBtn">Export Backup</button>
+          <button class="btn btn-ghost btn-block btn-sm" id="drawerImportBtn">Import Backup</button>
+        </div>
+      </div>
+    </aside>
+
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">tmf</div>
@@ -77,114 +162,4 @@
         </a>
         <a href="#/trip" class="nav-link" data-route="trip">
           <span class="nav-icon">✈</span>
-          <span>Trip Planner</span>
-        </a>
-        <a href="#/build" class="nav-link" data-route="build">
-          <span class="nav-icon">✦</span>
-          <span>Build Outfit</span>
-        </a>
-        <a href="#/daily" class="nav-link" data-route="daily">
-          <span class="nav-icon">☼</span>
-          <span>Daily Log</span>
-        </a>
-        <a href="#/slideshow" class="nav-link" data-route="slideshow">
-          <span class="nav-icon">▷</span>
-          <span>Wear Log</span>
-        </a>
-        <a href="#/receipts" class="nav-link" data-route="receipts">
-          <span class="nav-icon">⎙</span>
-          <span>Receipts</span>
-        </a>
-        <a href="#/notes" class="nav-link" data-route="notes">
-          <span class="nav-icon">✎</span>
-          <span>My Notes</span>
-        </a>
-        <a href="#/returns-due" class="nav-link" data-route="returns-due">
-          <span class="nav-icon">⏰</span>
-          <span>Returns Due</span>
-        </a>
-        <a href="#/shop" class="nav-link" data-route="shop">
-          <span class="nav-icon">🛍</span>
-          <span>Shop</span>
-        </a>
-        <a href="#/top10" class="nav-link" data-route="top10">
-          <span class="nav-icon">★</span>
-          <span>My Top 10</span>
-        </a>
-        <a href="#/cart-import" class="nav-link" data-route="cart-import">
-          <span class="nav-icon">⚡</span>
-          <span>Cart Importer</span>
-        </a>
-        <a href="#/email-import" class="nav-link" data-route="email-import">
-          <span class="nav-icon">📧</span>
-          <span>Email Importer</span>
-        </a>
-      </nav>
-
-      <div class="sidebar-footer">
-        <div class="theme-toggle" id="themeToggle">
-          <button data-theme="theme-bw" class="active">B&amp;W</button>
-          <button data-theme="theme-warm">Warm</button>
-          <button data-theme="theme-dark">Dark</button>
-        </div>
-        <button class="btn btn-ghost btn-block" id="exportBtn">Export Backup</button>
-        <label class="btn btn-ghost btn-block" for="importInput">Import Backup</label>
-        <input type="file" id="importInput" accept="application/json" hidden />
-      </div>
-    </aside>
-
-    <main class="main" id="main">
-      <!-- Views render here -->
-    </main>
-  </div>
-
-  
-  <!-- Login screen (full-screen overlay shown when no session) -->
-  <div class="login-overlay" id="loginOverlay" hidden>
-    <div class="login-card">
-      <div class="login-brand">
-        <div class="brand-mark">tmf</div>
-        <div>
-          <div class="login-brand-title">That's My Freaking Closet</div>
-          <div class="login-brand-tag">Wear what you <em>have</em>. Buy what you <em>love</em>.</div>
-        </div>
-      </div>
-      <div class="login-tabs">
-        <button class="login-tab active" data-tab="signin">Sign in</button>
-        <button class="login-tab" data-tab="signup">Create account</button>
-      </div>
-      <form class="login-form" id="loginForm" autocomplete="off">
-        <div class="field">
-          <label class="field-label" for="loginUsername">Username</label>
-          <input class="input" id="loginUsername" type="text" autocapitalize="none" required />
-        </div>
-        <div class="field">
-          <label class="field-label" for="loginPassword">Password</label>
-          <input class="input" id="loginPassword" type="password" required />
-        </div>
-        <div class="login-error" id="loginError" hidden></div>
-        <button class="btn btn-primary btn-block" id="loginSubmit" type="submit">Sign in</button>
-        <p class="login-footnote" id="loginFootnote">
-          Accounts are stored on this device only. Each account has its own private closet.
-        </p>
-      </form>
-    </div>
-  </div>
-  <!-- Item detail modal -->
-  <div class="modal" id="modal" hidden>
-    <div class="modal-backdrop" data-close></div>
-    <div class="modal-panel" id="modalPanel">
-      <button class="modal-close" data-close aria-label="Close">×</button>
-      <div class="modal-content" id="modalContent"></div>
-    </div>
-  </div>
-
-  <!-- Toast -->
-  <div class="toast" id="toast" hidden></div>
-  <script src="dist/app.bundle.js?v=1778083606168"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').catch(() => {});
-      });
-    
+          <span>Trip Pla

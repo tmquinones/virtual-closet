@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-05-06 16:06:37 */
-/* Sources (in order): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/photo-suggest-r1.js */
+/* TMF Closet bundle — built 2026-05-07 23:14:00 */
+/* Sources (in order, 41): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -11440,187 +11440,181 @@ function rotationDayHtml(day) {
 })();
 
 
-/* ===== js/photo-suggest-r1.js ===== */
-// photo-suggest-r1.js — heuristic color-based item suggestions from a daily photo.
-// Local/no-server: extracts dominant photo colors via canvas, maps each to the
-// nearest palette color in data-r9.js's COLOR_HEX, then ranks closet items by
-// how well their `color` field overlaps. Exposes:
-//   - window.extractDominantColors(blob, maxColors=6) → [{rgb:[r,g,b], weight}]
-//   - window.suggestItemsFromPhoto(blob, items, {topN}) → [item, ...]
+/* ===== js/drawer-r1.js ===== */
+// drawer-r1.js — Top-nav drawer + account dropdown wiring (Phase 2B)
+// ------------------------------------------------------------------
+// Owns the open/close state of the slide-in drawer and the account
+// dropdown. Wires the drawer's Sign Out / Export / Import buttons to
+// the existing hidden sidebar buttons via click-proxy, so existing
+// app-r10.js logic (sign-in / sign-out / backup import-export) keeps
+// working without any changes.
+//
+// IDs introduced by this module's HTML (in index.html):
+//   #drawerToggle      — hamburger button in top header
+//   #drawer            — outer drawer container (overlay + panel)
+//   #drawerBackdrop    — clickable backdrop behind the panel
+//   #drawerClose       — × button inside the drawer panel
+//   #drawerItemCount   — span that mirrors the sidebar's #itemCount
+//   #drawerExportBtn   — proxies #exportBtn
+//   #drawerImportBtn   — proxies #importInput (file picker)
+//   #searchToggle      — magnifier in top header (Phase 2C will wire)
+//   #accountToggle     — account icon in top header
+//   #accountDropdown   — dropdown anchored under #accountToggle
+//   #accountUsername   — span inside dropdown showing @username
+//   #accountSignOut    — proxies #signOutBtn
 
 (function () {
-  async function extractDominantColors(blob, maxColors = 6) {
-    if (!blob) return [];
-    const url = URL.createObjectURL(blob);
-    try {
-      const img = await new Promise((res, rej) => {
-        const i = new Image();
-        i.onload = () => res(i);
-        i.onerror = rej;
-        i.src = url;
+  'use strict';
+
+  function $(id) { return document.getElementById(id); }
+
+  // ---- Drawer open / close ----------------------------------------
+  function openDrawer() {
+    var d = $('drawer');
+    if (!d) return;
+    d.hidden = false;
+    requestAnimationFrame(function () { d.classList.add('drawer--open'); });
+    document.body.classList.add('drawer-open');
+  }
+
+  function closeDrawer() {
+    var d = $('drawer');
+    if (!d) return;
+    d.classList.remove('drawer--open');
+    document.body.classList.remove('drawer-open');
+    setTimeout(function () { d.hidden = true; }, 220);
+  }
+
+  // ---- Account dropdown -------------------------------------------
+  function toggleAccountDropdown(force) {
+    var dd = $('accountDropdown');
+    if (!dd) return;
+    var willOpen = (typeof force === 'boolean') ? force : dd.hidden;
+    if (willOpen) {
+      // Pull the @username value the existing app code wrote into
+      // the (hidden) sidebar's user block.
+      var src = $('sidebarUserName');
+      var dst = $('accountUsername');
+      if (dst) dst.textContent = (src && src.textContent) ? src.textContent : '';
+      dd.hidden = false;
+      requestAnimationFrame(function () { dd.classList.add('dropdown--open'); });
+    } else {
+      dd.classList.remove('dropdown--open');
+      setTimeout(function () { dd.hidden = true; }, 160);
+    }
+  }
+
+  // ---- Item-count sync (drawer header) ----------------------------
+  // The sidebar's #itemCount text is updated by app-r10.js as items
+  // load. We mirror just the digits into the drawer's count.
+  function syncDrawerItemCount() {
+    var src = $('itemCount');
+    var dst = $('drawerItemCount');
+    if (!src || !dst) return;
+    var m = (src.textContent || '').match(/(\d+)/);
+    dst.textContent = m ? m[1] : '—';
+  }
+
+  // ---- Active-link sync -------------------------------------------
+  // Mirror the .active state from .nav-link onto .drawer-link so the
+  // drawer highlights the current route.
+  function syncDrawerActive() {
+    var hash = location.hash || '';
+    document.querySelectorAll('.drawer-link').forEach(function (link) {
+      var href = link.getAttribute('href') || '';
+      link.classList.toggle('active', href === hash);
+    });
+  }
+
+  // ---- Init -------------------------------------------------------
+  function init() {
+    var drawerToggle = $('drawerToggle');
+    if (drawerToggle) drawerToggle.addEventListener('click', openDrawer);
+
+    var drawerClose = $('drawerClose');
+    if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+
+    var drawerBackdrop = $('drawerBackdrop');
+    if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawer);
+
+    // Close drawer when a link is tapped (after the route fires)
+    document.querySelectorAll('.drawer-link').forEach(function (link) {
+      link.addEventListener('click', function () {
+        setTimeout(closeDrawer, 60);
       });
-      const canvas = document.createElement('canvas');
-      const SIZE = 80;
-      canvas.width = SIZE;
-      canvas.height = SIZE;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, SIZE, SIZE);
-      const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
-
-      // Quantize to 4 bits/channel → 4096 buckets, accumulate exact RGB sums
-      // so we can recover the bucket's centroid color.
-      const buckets = new Map();
-      for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 3] < 128) continue; // transparent
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        // Skip near-white (skin/background washout) and near-black extremes,
-        // but keep a representative sample of each so they can still match.
-        const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
-        const cur = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
-        cur.count++;
-        cur.r += r;
-        cur.g += g;
-        cur.b += b;
-        buckets.set(key, cur);
-      }
-
-      const total = SIZE * SIZE;
-      return [...buckets.values()]
-        .map(c => ({
-          rgb: [Math.round(c.r / c.count), Math.round(c.g / c.count), Math.round(c.b / c.count)],
-          weight: c.count / total,
-        }))
-        .sort((a, b) => b.weight - a.weight)
-        .slice(0, maxColors);
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-
-  function hexToRgb(hex) {
-    if (!hex || typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) return null;
-    return [
-      parseInt(hex.slice(1, 3), 16),
-      parseInt(hex.slice(3, 5), 16),
-      parseInt(hex.slice(5, 7), 16),
-    ];
-  }
-  function rgbDist2(a, b) {
-    const dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2];
-    return dr * dr + dg * dg + db * db;
-  }
-
-  // Nearest palette color name (Black, Olive, Hot Pink, …) for a single RGB.
-  function nearestPaletteColor(rgb) {
-    if (typeof COLOR_HEX !== 'object' || !COLOR_HEX) return null;
-    let bestName = null, bestDist = Infinity;
-    for (const [name, hex] of Object.entries(COLOR_HEX)) {
-      const target = hexToRgb(hex);
-      if (!target) continue;
-      const d = rgbDist2(rgb, target);
-      if (d < bestDist) { bestDist = d; bestName = name; }
-    }
-    return bestName;
-  }
-
-  async function suggestItemsFromPhoto(blob, items, options) {
-    options = options || {};
-    const topN = options.topN || 15;
-    if (!blob || !Array.isArray(items) || items.length === 0) return [];
-
-    let dominants;
-    try { dominants = await extractDominantColors(blob, 6); }
-    catch (_) { return []; }
-    if (!dominants.length) return [];
-
-    // Build canonical-color and family weights from the photo's dominant
-    // colors, weighted by pixel coverage.
-    const colorWeights = new Map();
-    const familyWeights = new Map();
-    for (const dc of dominants) {
-      const name = nearestPaletteColor(dc.rgb);
-      if (!name) continue;
-      colorWeights.set(name, (colorWeights.get(name) || 0) + dc.weight);
-      const fam = (typeof familyForColor === 'function') ? familyForColor(name) : null;
-      if (fam) familyWeights.set(fam, (familyWeights.get(fam) || 0) + dc.weight);
-    }
-
-    const scored = items.map(it => {
-      let s = 0;
-      const raw = (it.color || '').trim();
-      if (!raw) return { item: it, score: 0 };
-      const c = (typeof normalizeColor === 'function') ? normalizeColor(raw) : raw;
-      if (c && colorWeights.has(c)) s += colorWeights.get(c) * 5;
-      const fam = (typeof familyForColor === 'function') ? familyForColor(c) : null;
-      if (fam && familyWeights.has(fam)) s += familyWeights.get(fam) * 2;
-      return { item: it, score: s };
     });
 
-    return scored
-      .filter(x => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topN)
-      .map(x => x.item);
+    // Account button toggle + click-outside-to-close
+    var accountToggle = $('accountToggle');
+    if (accountToggle) {
+      accountToggle.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleAccountDropdown();
+      });
+    }
+    document.addEventListener('click', function (e) {
+      var dd = $('accountDropdown');
+      var trig = $('accountToggle');
+      if (!dd || dd.hidden) return;
+      if (dd.contains(e.target)) return;
+      if (trig && trig.contains(e.target)) return;
+      toggleAccountDropdown(false);
+    });
+
+    // ESC closes both
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      var d = $('drawer');
+      var dd = $('accountDropdown');
+      if (d && !d.hidden) closeDrawer();
+      if (dd && !dd.hidden) toggleAccountDropdown(false);
+    });
+
+    // Account dropdown Sign Out — proxy to existing sidebar Sign Out
+    var accountSignOut = $('accountSignOut');
+    if (accountSignOut) {
+      accountSignOut.addEventListener('click', function () {
+        toggleAccountDropdown(false);
+        var sb = $('signOutBtn');
+        if (sb) sb.click();
+      });
+    }
+
+    // Drawer Export / Import — proxy to existing sidebar buttons
+    var drawerExportBtn = $('drawerExportBtn');
+    if (drawerExportBtn) {
+      drawerExportBtn.addEventListener('click', function () {
+        var sb = $('exportBtn');
+        if (sb) sb.click();
+      });
+    }
+    var drawerImportBtn = $('drawerImportBtn');
+    if (drawerImportBtn) {
+      drawerImportBtn.addEventListener('click', function () {
+        var inp = $('importInput');
+        if (inp) inp.click();  // opens the OS file picker
+      });
+    }
+
+    // Search button — placeholder. Phase 2C will swap this for the
+    // real modal opener.
+    var searchToggle = $('searchToggle');
+    if (searchToggle) {
+      searchToggle.addEventListener('click', function () {
+        // no-op for now
+      });
+    }
+
+    // Sync drawer state on init + when the route changes
+    syncDrawerItemCount();
+    syncDrawerActive();
+    window.addEventListener('hashchange', syncDrawerActive);
+    setInterval(syncDrawerItemCount, 1500);
   }
 
-  // Heuristic: is this RGB likely a product-shot backdrop, skin tone, or
-  // shadow? Used to drop noise pixels before mapping to palette names.
-  function isBackdropOrSkin(rgb) {
-    const [r, g, b] = rgb;
-    const sum = r + g + b;
-    // Tighter near-white than v41. RGB(225,225,225) sums to 675 and below
-    // this threshold counts as a real (off-white) color; (230,230,230)
-    // sums to 690 and is treated as backdrop. Empirically this catches
-    // most JPEG-blurred white backgrounds without dropping true Cream/Ivory
-    // garments which sit around (230-245, 220-235, 200-225) → still a
-    // judgement call, but biased away from over-tagging White/Cream.
-    if (sum > 685) return true;        // near-white backdrop
-    if (sum < 60)  return true;        // pure black (rare in real photos)
-    // Skin tone: warm hue, R > G > B with modest spread. Covers fair to
-    // medium tones without nuking actual peach/coral garments (which tend
-    // to have R-B > 90 and a redder cast).
-    if (r > g && g > b && r >= 150 && r <= 245) {
-      const rb = r - b;
-      const gb = g - b;
-      if (rb >= 25 && rb <= 90 && gb >= 10 && gb <= 55) return true;
-    }
-    return false;
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
   }
-
-  // Single-best palette color from an image, used to tag closet items so the
-  // Insights color chart can group brand-specific names ("Anthracite",
-  // "Bluestone", etc.) into canonical palette buckets without overwriting
-  // the user's original purchase color name. Returns a palette name like
-  // 'Navy' or 'Olive' — null if no usable color is found.
-  async function nearestPaletteColorFromImage(blob) {
-    if (!blob) return null;
-    let dominants;
-    try { dominants = await extractDominantColors(blob, 12); }
-    catch (_) { return null; }
-    if (!dominants.length) return null;
-    // Drop near-white backdrop, near-pure-black, and skin tones.
-    const filtered = dominants.filter(dc => !isBackdropOrSkin(dc.rgb));
-    const pool = filtered.length ? filtered : dominants;
-    // Aggregate weight per palette name across the whole filtered pool.
-    // Picking just `filtered[0]` is brittle: garment can have multiple
-    // dominant clusters (folds, gradient, shadow) and the top cluster is
-    // sometimes a noisy transition color. Summing weights per palette name
-    // smooths that out.
-    const palWeights = new Map();
-    for (const dc of pool) {
-      const name = nearestPaletteColor(dc.rgb);
-      if (!name) continue;
-      palWeights.set(name, (palWeights.get(name) || 0) + dc.weight);
-    }
-    if (palWeights.size === 0) return null;
-    let best = null, bestW = -1;
-    for (const [name, w] of palWeights) {
-      if (w > bestW) { bestW = w; best = name; }
-    }
-    return best;
-  }
-
-  window.extractDominantColors = extractDominantColors;
-  window.suggestItemsFromPhoto = suggestItemsFromPhoto;
-  window.nearestPaletteColorFromImage = nearestPaletteColorFromImage;
 })();
