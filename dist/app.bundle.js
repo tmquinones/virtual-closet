@@ -1,5 +1,5 @@
-/* TMF Closet bundle — built 2026-05-07 23:37:29 */
-/* Sources (in order, 42): js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r1.js, js/db-r3.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r10.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js */
+/* Virtual Closet bundle — built 2026-05-10 23:25:48 (v52) */
+/* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/photo-suggest-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -620,679 +620,631 @@ function itemPhotos(item) {
 })();
 
 
-/* ===== js/auth-r1.js ===== */
-// auth.js — local multi-user accounts (per-user IndexedDB)
+/* ===== js/auth-r2.js ===== */
+// auth-r2.js — API-backed auth layer for TMF Closet.
+// Replaces the localStorage-based auth-r1.js.
+// Same public interface: getCurrentUser, createAccount, signIn, signOut, userCount.
+// New exports: apiFetch (used by db-r4.js), restoreSession (called on app boot).
 //
-// Stores accounts in localStorage as 'vc:users' (JSON array).
-// Each user has: { id, username, salt, hash, createdAt }
-// Active session in sessionStorage as 'vc:currentUser' (cleared on tab close).
+// Token strategy:
+//   - Access token (15 min): kept in memory only (never written to localStorage).
+//   - Refresh token (30 days): stored in localStorage under 'vc:rt'.
+//   - User object cache: stored in localStorage under 'vc:user' so getCurrentUser()
+//     returns synchronously before restoreSession() completes.
 
-async function hashPassword(password, salt) {
-  const enc = new TextEncoder();
-  const data = enc.encode(password + ':' + salt);
-  const buf = await crypto.subtle.digest('SHA-256', data);
-  const arr = Array.from(new Uint8Array(buf));
-  return arr.map(b => b.toString(16).padStart(2, '0')).join('');
+const API_BASE = 'https://api.tmfcloset.com';
+const RT_KEY   = 'vc:rt';
+const USER_KEY = 'vc:user';
+
+// --- In-memory token state ---
+let _accessToken    = null;
+let _accessTokenExp = 0;   // ms timestamp when token expires
+let _currentUser    = null; // { id, email, username, displayName }
+
+// ── Internal helpers ──────────────────────────────────────────────────────
+
+function _readRefreshToken() {
+  try { return localStorage.getItem(RT_KEY) || null; } catch (_) { return null; }
 }
 
-function _getUsers() {
-  try { return JSON.parse(localStorage.getItem('vc:users') || '[]'); }
-  catch (_) { return []; }
+function _saveRefreshToken(rt) {
+  try { if (rt) localStorage.setItem(RT_KEY, rt); } catch (_) {}
 }
 
-function _saveUsers(users) {
-  localStorage.setItem('vc:users', JSON.stringify(users));
+function _clearStorage() {
+  try { localStorage.removeItem(RT_KEY); } catch (_) {}
+  try { localStorage.removeItem(USER_KEY); } catch (_) {}
 }
 
-function getCurrentUser() {
-  try { return JSON.parse(sessionStorage.getItem('vc:currentUser') || 'null'); }
-  catch (_) { return null; }
+function _cacheUser(user) {
+  try { localStorage.setItem(USER_KEY, JSON.stringify(user)); } catch (_) {}
 }
 
-function _setCurrentUser(user) {
-  if (user) sessionStorage.setItem('vc:currentUser', JSON.stringify(user));
-  else sessionStorage.removeItem('vc:currentUser');
-  // Reset the cached IndexedDB connection so the new user's DB is used
+function _buildUser(apiUser) {
+  // apiUser: { id, email, displayName, emailVerified, createdAt }
+  return {
+    id:          apiUser.id,
+    email:       apiUser.email,
+    displayName: apiUser.displayName || null,
+    // 'username' is used by existing UI code (sidebarUserName = '@' + user.username)
+    username:    apiUser.displayName || apiUser.email.split('@')[0],
+  };
+}
+
+function _setSession(data) {
+  // data: { accessToken, accessTokenExpiresIn, refreshToken, refreshTokenExpiresAt, user }
+  _accessToken    = data.accessToken;
+  _accessTokenExp = Date.now() + ((data.accessTokenExpiresIn || 900) - 30) * 1000;
+  if (data.refreshToken) _saveRefreshToken(data.refreshToken);
+  if (data.user) {
+    _currentUser = _buildUser(data.user);
+    _cacheUser(_currentUser);
+  }
   if (typeof resetDb === 'function') resetDb();
 }
 
-async function createAccount(username, password) {
-  username = (username || '').trim().toLowerCase();
-  if (!username) throw new Error('Please choose a username.');
-  if (!/^[a-z0-9._-]{2,32}$/.test(username)) {
-    throw new Error('Username must be 2-32 characters: letters, numbers, dot, dash, underscore.');
-  }
-  if (!password || password.length < 4) {
-    throw new Error('Password must be at least 4 characters.');
-  }
-  const users = _getUsers();
-  if (users.find(u => u.username === username)) {
-    throw new Error('That username is already taken on this device.');
-  }
-  const id = 'u_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
-  const salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  const hash = await hashPassword(password, salt);
-  users.push({ id, username, salt, hash, createdAt: Date.now() });
-  _saveUsers(users);
-  _setCurrentUser({ id, username });
-  return { id, username };
+function _clearSession() {
+  _accessToken    = null;
+  _accessTokenExp = 0;
+  _currentUser    = null;
+  _clearStorage();
+  if (typeof resetDb === 'function') resetDb();
 }
 
-async function signIn(username, password) {
-  username = (username || '').trim().toLowerCase();
-  const users = _getUsers();
-  const user = users.find(u => u.username === username);
-  if (!user) throw new Error('No account with that username on this device.');
-  const hash = await hashPassword(password, user.salt);
-  if (hash !== user.hash) throw new Error('Wrong password.');
-  _setCurrentUser({ id: user.id, username: user.username });
-  return { id: user.id, username: user.username };
+// Raw fetch — no auth header, returns parsed JSON or throws.
+async function _rawFetch(path, opts) {
+  const res = await fetch(API_BASE + path, {
+    method:  opts.method || 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    body:    opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  });
+  let payload;
+  try { payload = await res.json(); } catch (_) { payload = {}; }
+  if (!res.ok) {
+    const msg = payload.message || payload.error || ('HTTP ' + res.status);
+    throw Object.assign(new Error(msg), { status: res.status, apiError: payload });
+  }
+  return payload;
 }
 
-function signOut() {
-  _setCurrentUser(null);
+// Refresh the access token using the stored refresh token.
+async function _refresh() {
+  const rt = _readRefreshToken();
+  if (!rt) return false;
+  try {
+    const data = await _rawFetch('/api/auth/refresh', { method: 'POST', body: { refreshToken: rt } });
+    _setSession(data);
+    return true;
+  } catch (err) {
+    if (err.status === 401 || err.status === 403) _clearSession();
+    return false;
+  }
+}
+
+// ── Public: apiFetch ──────────────────────────────────────────────────────
+// Used by db-r4.js for every API call. Handles token refresh automatically.
+
+async function apiFetch(path, opts) {
+  opts = opts || {};
+  // Ensure we have a fresh access token
+  if (!_accessToken || Date.now() >= _accessTokenExp) {
+    const ok = await _refresh();
+    if (!ok && !opts.noAuth) {
+      throw Object.assign(new Error('Session expired — please sign in again'), { status: 401 });
+    }
+  }
+  const res = await fetch(API_BASE + path, {
+    method:  opts.method || 'GET',
+    headers: Object.assign(
+      { 'Content-Type': 'application/json' },
+      _accessToken ? { Authorization: 'Bearer ' + _accessToken } : {},
+      opts.headers || {}
+    ),
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  });
+
+  // 401 mid-session → try one refresh then retry
+  if (res.status === 401 && !opts._retried) {
+    const ok = await _refresh();
+    if (ok) return apiFetch(path, Object.assign({}, opts, { _retried: true }));
+    _clearSession();
+    throw Object.assign(new Error('Session expired — please sign in again'), { status: 401 });
+  }
+
+  if (res.status === 204) return null;
+  let payload;
+  try { payload = await res.json(); } catch (_) { payload = {}; }
+  if (!res.ok) {
+    const msg = payload.message || payload.error || ('HTTP ' + res.status);
+    throw Object.assign(new Error(msg), { status: res.status, apiError: payload });
+  }
+  return payload;
+}
+
+// ── Public: session management ────────────────────────────────────────────
+
+// Call once on app boot (before the auth gate). Silently restores a session
+// from the stored refresh token. Returns the user object or null.
+async function restoreSession() {
+  if (_currentUser && _accessToken && Date.now() < _accessTokenExp) return _currentUser;
+  const ok = await _refresh();
+  return ok ? _currentUser : null;
+}
+
+function getCurrentUser() {
+  if (_currentUser) return _currentUser;
+  // Synchronous fallback from cache (before restoreSession resolves)
+  try {
+    const cached = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+    return cached;
+  } catch (_) { return null; }
 }
 
 function userCount() {
-  return _getUsers().length;
+  // 1 = "sign in" tab default; 0 = "create account" tab default.
+  return (_readRefreshToken() || localStorage.getItem(USER_KEY)) ? 1 : 0;
 }
 
-
-/* ===== js/db-r3.js ===== */
-// db.js — IndexedDB wrapper for the Virtual Closet
-
-const DB_VERSION = 4;
-const STORE_ITEMS = 'items';
-const STORE_OUTFITS = 'outfits';
-const STORE_WISHLIST = 'wishlist';
-const STORE_CAPSULES = 'capsules';
-const STORE_DAILY = 'dailyOutfits';
-const STORE_NOTES = 'userNotes';
-
-let _dbPromise = null;
-let _dbName = null;
-
-function currentDbName() {
-  const u = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
-  return 'virtual-closet-' + (u ? u.id : 'guest');
+// Accept either an email address OR a plain username.
+// If no '@', we append '@tmfcloset.local' so the backend (which requires email) accepts it.
+function _toEmail(emailOrUsername) {
+  const s = (emailOrUsername || '').trim();
+  return s.includes('@') ? s : s + '@tmfcloset.local';
+}
+function _toDisplayName(emailOrUsername) {
+  const s = (emailOrUsername || '').trim();
+  return s.includes('@') ? s.split('@')[0] : s;
 }
 
-// Drop the cached connection so a future openDB() opens the new user's DB
-function resetDb() {
-  if (_dbPromise) {
-    _dbPromise.then(db => { try { db.close(); } catch (_) {} });
+async function createAccount(emailOrUsername, password) {
+  const email       = _toEmail(emailOrUsername);
+  const displayName = _toDisplayName(emailOrUsername);
+  const data = await _rawFetch('/api/auth/signup', {
+    method: 'POST',
+    body:   { email, password, displayName },
+  });
+  _setSession(data);
+  return _currentUser;
+}
+
+async function signIn(emailOrUsername, password) {
+  const email = _toEmail(emailOrUsername);
+  const data  = await _rawFetch('/api/auth/login', {
+    method: 'POST',
+    body:   { email, password },
+  });
+  _setSession(data);
+  return _currentUser;
+}
+
+async function signOut() {
+  if (_accessToken) {
+    try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (_) {}
   }
-  _dbPromise = null;
-  _dbName = null;
+  _clearSession();
 }
 
-function openDB() {
-  const targetName = currentDbName();
-  if (_dbPromise && _dbName === targetName) return _dbPromise;
-  if (_dbPromise) {
-    _dbPromise.then(db => { try { db.close(); } catch (_) {} });
+
+/* ===== js/db-r4.js ===== */
+// db-r4.js — API-backed database client for TMF Closet.
+// Replaces db-r3.js (IndexedDB). Every public function keeps the same
+// signature so the rest of the codebase (closet, wishlist, outfits, etc.)
+// needs zero changes.
+//
+// Photo handling:
+//   - item.photo / item.thumb: stored as Blob in IndexedDB; in the API
+//     they are stored on disk and returned as URL strings.
+//   - blobToUrl(string) already returns the string unchanged (utils-r1.js
+//     line 23), so all existing display code works without modification.
+//   - When ADDING/UPDATING an item with a Blob photo, we convert it to a
+//     base64 data URL and send it as photo_data / thumb_data in the body.
+//     The server decodes and saves to disk; the response has cover_photo_path.
+//
+// resetDb() is kept as a no-op (no connection to reset with fetch-based calls).
+
+const API_PHOTO_BASE = 'https://api.tmfcloset.com/api/photos/';
+
+// No-op: the API client has no stateful DB connection to reset.
+function resetDb() {}
+
+// ── Conversion helpers ────────────────────────────────────────────────────
+
+async function _blobToDataUrl(blob) {
+  if (!blob) return null;
+  if (typeof blob === 'string') return blob; // already a URL or data-URL
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+// Convert a DB row (snake_case) back to the camelCase shape the UI expects.
+function _rowToItem(row) {
+  if (!row) return null;
+  return {
+    id:                  row.id,
+    name:                row.name,
+    garmentType:         row.garment_type,
+    subType:             row.subtype,
+    brand:               row.brand,
+    size:                row.size,
+    color:               row.color,
+    paletteColor:        row.palette_color,
+    purchaseDate:        row.purchase_date,
+    purchasePrice:       row.purchase_price,
+    originalPrice:       row.original_price,
+    totalPaid:           row.total_paid,
+    returnWindowDays:    row.return_window_days,
+    lifestyleCategories: row.lifestyle_categories || [],
+    seasons:             row.seasons || [],
+    tags:                row.tags || [],
+    status:              row.status,
+    favorite:            !!row.favorite,
+    rating:              row.rating,
+    ratingFit:           row.rating_fit,
+    ratingComfort:       row.rating_comfort,
+    ratingStyle:         row.rating_style,
+    ratingVersatility:   row.rating_versatility,
+    forSale:             !!row.for_sale,
+    askingPrice:         row.asking_price,
+    listingDescription:  row.listing_description,
+    notes:               row.notes,
+    // photo / thumb are URL strings; blobToUrl() handles strings natively
+    photo:               row.cover_photo_path ? API_PHOTO_BASE + row.cover_photo_path : null,
+    thumb:               row.thumb_path       ? API_PHOTO_BASE + row.thumb_path       : null,
+    photos:              [],  // extra photos not yet migrated; stub for compatibility
+    createdAt:           row.created_at ? new Date(row.created_at).getTime() : null,
+    updatedAt:           row.updated_at ? new Date(row.updated_at).getTime() : null,
+  };
+}
+
+// Convert a camelCase item object → API body (snake_case).
+// Converts Blob photo fields to base64 data URLs for transport.
+async function _itemToBody(item) {
+  const b = {
+    name:                 item.name,
+    garment_type:         item.garmentType,
+    subtype:              item.subType,
+    brand:                item.brand,
+    size:                 item.size,
+    color:                item.color,
+    palette_color:        item.paletteColor,
+    purchase_date:        item.purchaseDate,
+    purchase_price:       item.purchasePrice,
+    original_price:       item.originalPrice,
+    total_paid:           item.totalPaid,
+    return_window_days:   item.returnWindowDays,
+    lifestyle_categories: item.lifestyleCategories,
+    seasons:              item.seasons,
+    tags:                 item.tags,
+    status:               item.status,
+    favorite:             item.favorite,
+    rating:               item.rating,
+    rating_fit:           item.ratingFit,
+    rating_comfort:       item.ratingComfort,
+    rating_style:         item.ratingStyle,
+    rating_versatility:   item.ratingVersatility,
+    for_sale:             item.forSale,
+    asking_price:         item.askingPrice,
+    listing_description:  item.listingDescription,
+    notes:                item.notes,
+  };
+  // Handle photo blobs
+  if (item.photo instanceof Blob || (item.photo && typeof item.photo !== 'string')) {
+    b.photo_data = await _blobToDataUrl(item.photo);
   }
-  _dbName = targetName;
-  _dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(targetName, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE_ITEMS)) {
-        const items = db.createObjectStore(STORE_ITEMS, { keyPath: 'id', autoIncrement: true });
-        items.createIndex('garmentType', 'garmentType', { unique: false });
-        items.createIndex('createdAt', 'createdAt', { unique: false });
-      }
-      if (!db.objectStoreNames.contains(STORE_OUTFITS)) {
-        const outfits = db.createObjectStore(STORE_OUTFITS, { keyPath: 'id', autoIncrement: true });
-        outfits.createIndex('occasion', 'occasion', { unique: false });
-        outfits.createIndex('createdAt', 'createdAt', { unique: false });
-      }
-      if (!db.objectStoreNames.contains(STORE_WISHLIST)) {
-        const wishlist = db.createObjectStore(STORE_WISHLIST, { keyPath: 'id', autoIncrement: true });
-        wishlist.createIndex('createdAt', 'createdAt', { unique: false });
-      }
-      if (!db.objectStoreNames.contains(STORE_CAPSULES)) {
-        const capsules = db.createObjectStore(STORE_CAPSULES, { keyPath: 'id', autoIncrement: true });
-        capsules.createIndex('createdAt', 'createdAt', { unique: false });
-      }
-      if (!db.objectStoreNames.contains(STORE_DAILY)) {
-        const daily = db.createObjectStore(STORE_DAILY, { keyPath: 'id', autoIncrement: true });
-        daily.createIndex('date', 'date', { unique: false });
-        daily.createIndex('createdAt', 'createdAt', { unique: false });
-      }
-      if (!db.objectStoreNames.contains(STORE_NOTES)) {
-        const notes = db.createObjectStore(STORE_NOTES, { keyPath: 'id', autoIncrement: true });
-        notes.createIndex('createdAt', 'createdAt', { unique: false });
-      }
-    };
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
-  });
-  return _dbPromise;
+  if (item.thumb instanceof Blob || (item.thumb && typeof item.thumb !== 'string')) {
+    b.thumb_data = await _blobToDataUrl(item.thumb);
+  }
+  return b;
 }
 
-function tx(storeName, mode = 'readonly') {
-  return openDB().then(db => db.transaction(storeName, mode).objectStore(storeName));
+function _rowToOutfit(row) {
+  if (!row) return null;
+  return {
+    id:        row.id,
+    name:      row.name,
+    occasion:  row.occasion,
+    notes:     row.notes,
+    itemIds:   row.item_ids || [],
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+  };
 }
 
-// === Items ===
-async function dbAddItem(item) {
-  const store = await tx(STORE_ITEMS, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const now = Date.now();
-    const record = { ...item, createdAt: item.createdAt || now, updatedAt: now };
-    const req = store.add(record);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+function _rowToWishlist(row) {
+  if (!row) return null;
+  return {
+    id:          row.id,
+    name:        row.name,
+    brand:       row.brand,
+    url:         row.url,
+    size:        row.size,
+    targetPrice: row.target_price,
+    garmentType: row.garment_type,
+    subType:     row.subtype,
+    notes:       row.notes,
+    photo:       row.photo_path  ? API_PHOTO_BASE + row.photo_path  : null,
+    thumb:       row.photo2_path ? API_PHOTO_BASE + row.photo2_path : null,
+    photos:      [],
+    createdAt:   row.created_at ? new Date(row.created_at).getTime() : null,
+    updatedAt:   row.updated_at ? new Date(row.updated_at).getTime() : null,
+  };
 }
 
-async function dbUpdateItem(id, updates) {
-  const store = await tx(STORE_ITEMS, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const getReq = store.get(id);
-    getReq.onsuccess = () => {
-      const existing = getReq.result;
-      if (!existing) return reject(new Error('Item not found'));
-      const merged = { ...existing, ...updates, id, updatedAt: Date.now() };
-      const putReq = store.put(merged);
-      putReq.onsuccess = () => resolve(merged);
-      putReq.onerror = () => reject(putReq.error);
-    };
-    getReq.onerror = () => reject(getReq.error);
-  });
+async function _wishlistToBody(item) {
+  const b = {
+    name:         item.name,
+    brand:        item.brand,
+    url:          item.url,
+    size:         item.size,
+    target_price: item.targetPrice,
+    garment_type: item.garmentType,
+    subtype:      item.subType,
+    notes:        item.notes,
+  };
+  if (item.photo instanceof Blob) b.photo_data = await _blobToDataUrl(item.photo);
+  if (item.thumb instanceof Blob) b.photo2_data = await _blobToDataUrl(item.thumb);
+  return b;
+}
+
+function _rowToDaily(row) {
+  if (!row) return null;
+  return {
+    id:        row.id,
+    date:      row.date,
+    caption:   row.caption,
+    photo:     row.photo_path ? API_PHOTO_BASE + row.photo_path : null,
+    itemIds:   row.item_ids || [],
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+  };
+}
+
+async function _dailyToBody(rec) {
+  const b = {
+    date:     rec.date,
+    caption:  rec.caption,
+    item_ids: rec.itemIds || [],
+  };
+  if (rec.photo instanceof Blob) b.photo_data = await _blobToDataUrl(rec.photo);
+  return b;
+}
+
+// ── Items ─────────────────────────────────────────────────────────────────
+
+async function dbGetAllItems() {
+  const rows = await apiFetch('/api/items');
+  return (rows || []).map(_rowToItem);
 }
 
 async function dbGetItem(id) {
-  const store = await tx(STORE_ITEMS);
-  return new Promise((resolve, reject) => {
-    const req = store.get(id);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+  const row = await apiFetch('/api/items/' + id);
+  return _rowToItem(row);
 }
 
-async function dbGetAllItems() {
-  const store = await tx(STORE_ITEMS);
-  return new Promise((resolve, reject) => {
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
+async function dbAddItem(item) {
+  const body = await _itemToBody(item);
+  const row  = await apiFetch('/api/items', { method: 'POST', body });
+  return row.id;
+}
+
+async function dbUpdateItem(id, updates) {
+  const body = await _itemToBody(updates);
+  const row  = await apiFetch('/api/items/' + id, { method: 'PUT', body });
+  return _rowToItem(row);
 }
 
 async function dbDeleteItem(id) {
-  const store = await tx(STORE_ITEMS, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const req = store.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  await apiFetch('/api/items/' + id, { method: 'DELETE' });
 }
 
-// === Outfits ===
-async function dbAddOutfit(outfit) {
-  const store = await tx(STORE_OUTFITS, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const now = Date.now();
-    const record = { ...outfit, createdAt: outfit.createdAt || now, updatedAt: now };
-    const req = store.add(record);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function dbUpdateOutfit(id, updates) {
-  const store = await tx(STORE_OUTFITS, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const getReq = store.get(id);
-    getReq.onsuccess = () => {
-      const existing = getReq.result;
-      if (!existing) return reject(new Error('Outfit not found'));
-      const merged = { ...existing, ...updates, id, updatedAt: Date.now() };
-      const putReq = store.put(merged);
-      putReq.onsuccess = () => resolve(merged);
-      putReq.onerror = () => reject(putReq.error);
-    };
-    getReq.onerror = () => reject(getReq.error);
-  });
-}
+// ── Outfits ───────────────────────────────────────────────────────────────
 
 async function dbGetAllOutfits() {
-  const store = await tx(STORE_OUTFITS);
-  return new Promise((resolve, reject) => {
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
+  const rows = await apiFetch('/api/outfits');
+  return (rows || []).map(_rowToOutfit);
 }
 
 async function dbGetOutfit(id) {
-  const store = await tx(STORE_OUTFITS);
-  return new Promise((resolve, reject) => {
-    const req = store.get(id);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+  const row = await apiFetch('/api/outfits/' + id);
+  return _rowToOutfit(row);
+}
+
+async function dbAddOutfit(outfit) {
+  const row = await apiFetch('/api/outfits', {
+    method: 'POST',
+    body: {
+      name:      outfit.name,
+      occasion:  outfit.occasion,
+      notes:     outfit.notes,
+      item_ids:  outfit.itemIds || [],
+    },
   });
+  return row.id;
+}
+
+async function dbUpdateOutfit(id, updates) {
+  const row = await apiFetch('/api/outfits/' + id, {
+    method: 'PUT',
+    body: {
+      name:      updates.name,
+      occasion:  updates.occasion,
+      notes:     updates.notes,
+      item_ids:  updates.itemIds,
+    },
+  });
+  return _rowToOutfit(row);
 }
 
 async function dbDeleteOutfit(id) {
-  const store = await tx(STORE_OUTFITS, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const req = store.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  await apiFetch('/api/outfits/' + id, { method: 'DELETE' });
 }
 
-// === Backup / Restore ===
+// ── Wishlist ──────────────────────────────────────────────────────────────
+
+async function dbGetAllWishlistItems() {
+  const rows = await apiFetch('/api/wishlist');
+  return (rows || []).map(_rowToWishlist);
+}
+
+async function dbAddWishlistItem(item) {
+  const body = await _wishlistToBody(item);
+  const row  = await apiFetch('/api/wishlist', { method: 'POST', body });
+  return row.id;
+}
+
+async function dbUpdateWishlistItem(id, updates) {
+  const body = await _wishlistToBody(updates);
+  const row  = await apiFetch('/api/wishlist/' + id, { method: 'PUT', body });
+  return _rowToWishlist(row);
+}
+
+async function dbDeleteWishlistItem(id) {
+  await apiFetch('/api/wishlist/' + id, { method: 'DELETE' });
+}
+
+// ── Capsules ──────────────────────────────────────────────────────────────
+
+async function dbGetAllCapsules() {
+  return (await apiFetch('/api/capsules')) || [];
+}
+
+async function dbAddCapsule(capsule) {
+  const row = await apiFetch('/api/capsules', { method: 'POST', body: capsule });
+  return row.id;
+}
+
+async function dbUpdateCapsule(id, updates) {
+  return apiFetch('/api/capsules/' + id, { method: 'PUT', body: updates });
+}
+
+async function dbDeleteCapsule(id) {
+  await apiFetch('/api/capsules/' + id, { method: 'DELETE' });
+}
+
+// ── Daily log ─────────────────────────────────────────────────────────────
+
+async function dbGetAllDaily() {
+  const rows = await apiFetch('/api/daily');
+  return (rows || []).map(_rowToDaily);
+}
+
+async function dbGetDailyByDate(date) {
+  const row = await apiFetch('/api/daily?date=' + encodeURIComponent(date));
+  return row ? _rowToDaily(row) : null;
+}
+
+async function dbAddDaily(rec) {
+  const body = await _dailyToBody(rec);
+  const row  = await apiFetch('/api/daily', { method: 'POST', body });
+  return row.id;
+}
+
+async function dbUpdateDaily(id, updates) {
+  const body = await _dailyToBody(updates);
+  const row  = await apiFetch('/api/daily/' + id, { method: 'PUT', body });
+  return _rowToDaily(row);
+}
+
+async function dbDeleteDaily(id) {
+  await apiFetch('/api/daily/' + id, { method: 'DELETE' });
+}
+
+// ── Notes ─────────────────────────────────────────────────────────────────
+
+async function dbGetAllNotes() {
+  return (await apiFetch('/api/notes')) || [];
+}
+
+async function dbAddNote(rec) {
+  const row = await apiFetch('/api/notes', { method: 'POST', body: rec });
+  return row.id;
+}
+
+async function dbUpdateNote(id, updates) {
+  return apiFetch('/api/notes/' + id, { method: 'PUT', body: updates });
+}
+
+async function dbDeleteNote(id) {
+  await apiFetch('/api/notes/' + id, { method: 'DELETE' });
+}
+
+// ── Backup / Restore ──────────────────────────────────────────────────────
+// dbExportAll is kept working (reads from API + serialises photos to base64).
+// dbImportAll sends the envelope to POST /api/migrate.
+
 async function dbExportAll() {
-  const items = await dbGetAllItems();
-  const outfits = await dbGetAllOutfits();
-  const wishlist = await dbGetAllWishlistItems();
-  const itemsExport = await Promise.all(items.map(async i => {
-    const out = { ...i };
-    if (out.photo) out.photo = await blobToBase64(out.photo);
-    if (out.thumb) out.thumb = await blobToBase64(out.thumb);
-    if (Array.isArray(out.photos)) {
-      out.photos = await Promise.all(out.photos.map(p => p ? blobToBase64(p) : null));
-    }
-    return out;
-  }));
-  const wishlistExport = await Promise.all(wishlist.map(async w => {
-    const out = { ...w };
-    if (out.photo && typeof out.photo !== 'string') out.photo = await blobToBase64(out.photo);
-    if (out.thumb && typeof out.thumb !== 'string') out.thumb = await blobToBase64(out.thumb);
-    if (Array.isArray(out.photos)) {
-      out.photos = await Promise.all(out.photos.map(p => (p && typeof p !== 'string') ? blobToBase64(p) : p));
-    }
-    return out;
-  }));
+  const [items, outfits, wishlist] = await Promise.all([
+    dbGetAllItems(),
+    dbGetAllOutfits(),
+    dbGetAllWishlistItems(),
+  ]);
+  // Photos are URL strings; for export we include them as-is.
+  // On re-import (migrate endpoint) the server handles URL or base64.
   return {
-    version: 2,
+    version:    2,
     exportedAt: new Date().toISOString(),
-    items: itemsExport,
+    items,
     outfits,
-    wishlist: wishlistExport
+    wishlist,
   };
 }
 
 async function dbImportAll(data, onProgress) {
   if (!data || !Array.isArray(data.items)) throw new Error('Invalid backup: missing "items" array');
-  const total = data.items.length + (Array.isArray(data.outfits) ? data.outfits.length : 0) + (Array.isArray(data.wishlist) ? data.wishlist.length : 0);
-  const newItemIds = [];
-  let done = 0;
-  for (const it of data.items) {
-    const { id, ...rest } = it;
-    try {
-      if (rest.photo && typeof rest.photo === 'string') rest.photo = await base64ToBlob(rest.photo);
-      if (rest.thumb && typeof rest.thumb === 'string') rest.thumb = await base64ToBlob(rest.thumb);
-      if (Array.isArray(rest.photos)) {
-        rest.photos = await Promise.all(rest.photos.map(p =>
-          (p && typeof p === 'string') ? base64ToBlob(p) : null
-        ));
-        rest.photos = rest.photos.filter(Boolean);
-      }
-      const newId = await dbAddItem(rest);
-      newItemIds.push(newId);
-    } catch (err) {
-      console.error('Failed to import item', rest.name || '(unnamed)', err);
-      throw new Error('Failed at item "' + (rest.name || '(unnamed)') + '": ' + (err && err.message ? err.message : String(err)));
-    }
-    done++;
-    if (onProgress) onProgress(done, total, rest.name);
-  }
-  if (Array.isArray(data.outfits)) {
-    for (const o of data.outfits) {
-      const { id, ...rest } = o;
-      await dbAddOutfit(rest);
-      done++;
-      if (onProgress) onProgress(done, total, rest.name);
-    }
-  }
-  if (Array.isArray(data.wishlist)) {
-    for (const w of data.wishlist) {
-      const { id, ...rest } = w;
-      try {
-        if (rest.photo && typeof rest.photo === 'string') rest.photo = await base64ToBlob(rest.photo);
-        if (rest.thumb && typeof rest.thumb === 'string') rest.thumb = await base64ToBlob(rest.thumb);
-        if (Array.isArray(rest.photos)) {
-          rest.photos = await Promise.all(rest.photos.map(p =>
-            (p && typeof p === 'string') ? base64ToBlob(p) : null
-          ));
-          rest.photos = rest.photos.filter(Boolean);
-        }
-        await dbAddWishlistItem(rest);
-      } catch (err) {
-        console.error('Failed to import wishlist item', rest.name || '(unnamed)', err);
-      }
-      done++;
-      if (onProgress) onProgress(done, (total || done), 'Wishlist: ' + (rest.name || ''));
-    }
-  }
-  return newItemIds;
+  const total = data.items.length +
+    (Array.isArray(data.outfits)  ? data.outfits.length  : 0) +
+    (Array.isArray(data.wishlist) ? data.wishlist.length : 0);
+  // Show approximate progress (server-side batch, we only get one response)
+  if (onProgress) onProgress(0, total, 'Uploading backup…');
+  const result = await apiFetch('/api/migrate', { method: 'POST', body: data });
+  if (onProgress) onProgress(total, total, 'Done');
+  return new Array(result.imported ? result.imported.items : 0).fill(null);
 }
 
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
+// ── Feedback ──────────────────────────────────────────────────────────────
+
+async function dbGetAllFeedback() {
+  return apiFetch('/api/feedback');
+}
+
+async function dbSaveFeedback(entry) {
+  return apiFetch('/api/feedback', { method: 'POST', body: entry });
+}
+
+async function dbDeleteFeedback(entry) {
+  return apiFetch('/api/feedback', { method: 'DELETE', body: entry });
+}
+
+async function dbSaveBadPair(pair) {
+  return apiFetch('/api/feedback/bad-pairs', { method: 'POST', body: pair });
+}
+
+async function dbDeleteBadPair(pair) {
+  return apiFetch('/api/feedback/bad-pairs', { method: 'DELETE', body: pair });
+}
+
+// ── Preferences ───────────────────────────────────────────────────────────
+
+async function dbGetPreferences() {
+  return apiFetch('/api/preferences');
+}
+
+async function dbSetPreference(key, value) {
+  return apiFetch('/api/preferences/' + encodeURIComponent(key), {
+    method: 'PUT',
+    body: { value: String(value) },
   });
 }
 
-// Robust base64-data-URL → Blob converter that does not depend on fetch()
-async function base64ToBlob(dataUrl) {
-  if (!dataUrl || typeof dataUrl !== 'string') {
-    throw new Error('Photo data is missing or not a string');
-  }
-  if (!dataUrl.startsWith('data:')) {
-    throw new Error('Photo is not a data URL (must start with "data:")');
-  }
-  const commaIdx = dataUrl.indexOf(',');
-  if (commaIdx === -1) {
-    throw new Error('Photo data URL is malformed (no comma separator)');
-  }
-  const meta = dataUrl.slice(5, commaIdx);
-  const payload = dataUrl.slice(commaIdx + 1);
-  const mime = (meta.split(';')[0] || 'application/octet-stream').trim();
-  const isBase64 = meta.toLowerCase().includes('base64');
-  let bytes;
-  try {
-    if (isBase64) {
-      const bin = atob(payload);
-      bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    } else {
-      const decoded = decodeURIComponent(payload);
-      bytes = new Uint8Array(decoded.length);
-      for (let i = 0; i < decoded.length; i++) bytes[i] = decoded.charCodeAt(i);
-    }
-  } catch (e) {
-    throw new Error('Photo could not be decoded: ' + (e && e.message ? e.message : String(e)));
-  }
-  return new Blob([bytes], { type: mime });
-}
-
-// Migrate items + outfits from the pre-login "guest" database into the
-// currently-signed-in user's database. Returns the counts moved.
-// Try a list of legacy database names that may hold the user's pre-login
-// data. The first to actually exist with items wins.
-const LEGACY_DB_NAMES = ['virtual-closet', 'virtual-closet-guest'];
-
-async function _openExistingDb(name) {
-  // Use indexedDB.databases() if available to check existence first
-  if (indexedDB.databases) {
-    try {
-      const all = await indexedDB.databases();
-      const found = all.find(d => d.name === name);
-      if (!found) return null;
-    } catch (_) { /* fall through */ }
-  }
-  return new Promise((resolve, reject) => {
-    let createdNew = false;
-    const req = indexedDB.open(name, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      // If the DB doesn't already exist, mark it for deletion afterward
-      if (e.oldVersion === 0) createdNew = true;
-    };
-    req.onsuccess = (e) => {
-      const db = e.target.result;
-      if (createdNew) {
-        try { db.close(); } catch (_) {}
-        try { indexedDB.deleteDatabase(name); } catch (_) {}
-        resolve(null);
-      } else {
-        resolve(db);
-      }
-    };
-    req.onerror = (e) => reject(e.target.error);
-    req.onblocked = () => reject(new Error('Legacy DB ' + name + ' is in use elsewhere'));
-  }).catch(() => null);
-}
-
+// ── Legacy stubs (no-op in API mode) ─────────────────────────────────────
+// migrateGuestToCurrentUser only applies to IndexedDB; with the API every
+// user already has their own server-side DB partition.
 async function migrateGuestToCurrentUser() {
-  const targetName = currentDbName();
-  if (LEGACY_DB_NAMES.includes(targetName)) {
-    return { items: 0, outfits: 0, skipped: 'no user signed in' };
-  }
-  // Try each legacy DB name in turn; first one with items wins
-  let guestDb = null;
-  let usedName = null;
-  for (const name of LEGACY_DB_NAMES) {
-    const db = await _openExistingDb(name);
-    if (!db) continue;
-    if (!db.objectStoreNames.contains(STORE_ITEMS)) {
-      try { db.close(); } catch (_) {}
-      continue;
-    }
-    // Quick count to see if it has anything
-    const count = await new Promise(r => {
-      const req = db.transaction(STORE_ITEMS).objectStore(STORE_ITEMS).count();
-      req.onsuccess = e => r(e.target.result || 0);
-      req.onerror = () => r(0);
-    });
-    if (count > 0) {
-      guestDb = db;
-      usedName = name;
-      break;
-    } else {
-      try { db.close(); } catch (_) {}
-    }
-  }
-  if (!guestDb) return { items: 0, outfits: 0 };
-  console.log('[migrate] pulling from', usedName);
-  // Read items + outfits
-  let items = [], outfits = [];
-  try {
-    if (guestDb.objectStoreNames.contains(STORE_ITEMS)) {
-      items = await new Promise((res, rej) => {
-        const r = guestDb.transaction(STORE_ITEMS).objectStore(STORE_ITEMS).getAll();
-        r.onsuccess = e => res(e.target.result || []);
-        r.onerror = e => rej(e.target.error);
-      });
-    }
-    if (guestDb.objectStoreNames.contains(STORE_OUTFITS)) {
-      outfits = await new Promise((res, rej) => {
-        const r = guestDb.transaction(STORE_OUTFITS).objectStore(STORE_OUTFITS).getAll();
-        r.onsuccess = e => res(e.target.result || []);
-        r.onerror = e => rej(e.target.error);
-      });
-    }
-  } finally {
-    try { guestDb.close(); } catch (_) {}
-  }
-  if (items.length === 0 && outfits.length === 0) {
-    return { items: 0, outfits: 0 };
-  }
-  // Map old item IDs to new ones so we can remap outfit.itemIds
-  const idMap = new Map();
-  for (const it of items) {
-    const { id: oldId, ...rest } = it;
-    const newId = await dbAddItem(rest);
-    idMap.set(oldId, newId);
-  }
-  for (const o of outfits) {
-    const { id: oldId, ...rest } = o;
-    if (Array.isArray(rest.itemIds)) {
-      rest.itemIds = rest.itemIds.map(id => idMap.get(id)).filter(x => x != null);
-    }
-    await dbAddOutfit(rest);
-  }
-  return { items: items.length, outfits: outfits.length };
-}
-
-// === Wishlist ===
-async function dbAddWishlistItem(item) {
-  const store = await tx(STORE_WISHLIST, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const now = Date.now();
-    const record = { ...item, createdAt: item.createdAt || now, updatedAt: now };
-    const req = store.add(record);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function dbUpdateWishlistItem(id, updates) {
-  const store = await tx(STORE_WISHLIST, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const getReq = store.get(id);
-    getReq.onsuccess = () => {
-      const existing = getReq.result;
-      if (!existing) return reject(new Error('Wishlist item not found'));
-      const merged = { ...existing, ...updates, id, updatedAt: Date.now() };
-      const putReq = store.put(merged);
-      putReq.onsuccess = () => resolve(merged);
-      putReq.onerror = () => reject(putReq.error);
-    };
-    getReq.onerror = () => reject(getReq.error);
-  });
-}
-async function dbGetAllWishlistItems() {
-  const store = await tx(STORE_WISHLIST, 'readonly');
-  return new Promise((resolve, reject) => {
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function dbDeleteWishlistItem(id) {
-  const store = await tx(STORE_WISHLIST, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const req = store.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-}
-
-// === Capsule wardrobes ===
-async function dbAddCapsule(capsule) {
-  const store = await tx(STORE_CAPSULES, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const now = Date.now();
-    const record = { ...capsule, createdAt: capsule.createdAt || now, updatedAt: now };
-    const req = store.add(record);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function dbUpdateCapsule(id, updates) {
-  const store = await tx(STORE_CAPSULES, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const getReq = store.get(id);
-    getReq.onsuccess = () => {
-      const existing = getReq.result;
-      if (!existing) return reject(new Error('Capsule not found'));
-      const merged = { ...existing, ...updates, id, updatedAt: Date.now() };
-      const putReq = store.put(merged);
-      putReq.onsuccess = () => resolve(merged);
-      putReq.onerror = () => reject(putReq.error);
-    };
-    getReq.onerror = () => reject(getReq.error);
-  });
-}
-async function dbGetAllCapsules() {
-  const store = await tx(STORE_CAPSULES, 'readonly');
-  return new Promise((resolve, reject) => {
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function dbDeleteCapsule(id) {
-  const store = await tx(STORE_CAPSULES, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const req = store.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-}
-
-// === Daily outfit log ===
-async function dbAddDaily(rec) {
-  const store = await tx(STORE_DAILY, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const now = Date.now();
-    const record = { ...rec, createdAt: rec.createdAt || now, updatedAt: now };
-    const req = store.add(record);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function dbUpdateDaily(id, updates) {
-  const store = await tx(STORE_DAILY, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const getReq = store.get(id);
-    getReq.onsuccess = () => {
-      const existing = getReq.result;
-      if (!existing) return reject(new Error('Daily record not found'));
-      const merged = { ...existing, ...updates, id, updatedAt: Date.now() };
-      const putReq = store.put(merged);
-      putReq.onsuccess = () => resolve(merged);
-      putReq.onerror = () => reject(putReq.error);
-    };
-    getReq.onerror = () => reject(getReq.error);
-  });
-}
-async function dbGetAllDaily() {
-  const store = await tx(STORE_DAILY, 'readonly');
-  return new Promise((resolve, reject) => {
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function dbDeleteDaily(id) {
-  const store = await tx(STORE_DAILY, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const req = store.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-}
-
-// === User notes (personal updates / features-to-add list) ===
-async function dbAddNote(rec) {
-  const store = await tx(STORE_NOTES, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const now = Date.now();
-    const record = { ...rec, createdAt: rec.createdAt || now, updatedAt: now };
-    const req = store.add(record);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function dbUpdateNote(id, updates) {
-  const store = await tx(STORE_NOTES, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const getReq = store.get(id);
-    getReq.onsuccess = () => {
-      const existing = getReq.result;
-      if (!existing) return reject(new Error('Note not found'));
-      const merged = { ...existing, ...updates, id, updatedAt: Date.now() };
-      const putReq = store.put(merged);
-      putReq.onsuccess = () => resolve(merged);
-      putReq.onerror = () => reject(putReq.error);
-    };
-    getReq.onerror = () => reject(getReq.error);
-  });
-}
-async function dbGetAllNotes() {
-  const store = await tx(STORE_NOTES, 'readonly');
-  return new Promise((resolve, reject) => {
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function dbDeleteNote(id) {
-  const store = await tx(STORE_NOTES, 'readwrite');
-  return new Promise((resolve, reject) => {
-    const req = store.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
+  return { items: 0, outfits: 0, skipped: 'noop_api_mode' };
 }
 
 
@@ -4993,10 +4945,10 @@ function _renderTile(group) {
 }
 
 
-/* ===== js/app-r10.js ===== */
-// app.js — main router and app glue
+/* ===== js/app-r11.js ===== */
+// app-r11.js — main router and app glue (API-backed auth + db, migrate page)
 
-const ROUTES = ['browse', 'closet', 'add', 'outfits', 'build', 'recover', 'audit', 'insights', 'wishlist', 'girlmath', 'trip', 'compare', 'capsule', 'returned', 'daily', 'slideshow', 'notes', 'receipts', 'returns-due', 'shop', 'top10', 'cart-import', 'email-import'];
+const ROUTES = ['browse', 'closet', 'add', 'outfits', 'build', 'recover', 'audit', 'insights', 'wishlist', 'girlmath', 'trip', 'compare', 'capsule', 'returned', 'daily', 'slideshow', 'notes', 'receipts', 'returns-due', 'shop', 'top10', 'cart-import', 'email-import', 'migrate'];
 
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
@@ -5040,6 +4992,7 @@ async function router() {
     case 'top10':    if (typeof window.renderTop10View === 'function') await window.renderTop10View(main); break;
     case 'cart-import': if (typeof window.renderCartImportView === 'function') await window.renderCartImportView(main); break;
     case 'email-import': if (typeof window.renderEmailImportView === 'function') await window.renderEmailImportView(main); break;
+    case 'migrate':      if (typeof window.renderMigrateView === 'function') await window.renderMigrateView(main); break;
     default:        await renderClosetView(main, params, true);
   }
 }
@@ -5141,7 +5094,7 @@ function wireLoginScreen() {
       submitBtn.textContent = mode === 'signin' ? 'Sign in' : 'Create account';
       if (footnote) footnote.textContent = mode === 'signin'
         ? 'Accounts are stored on this device only. Each account has its own private closet.'
-        : 'Pick a username and password. Both are stored only on this device.';
+        : 'Enter an email address and password (minimum 8 characters).';
       setLoginError('');
     });
   });
@@ -5273,6 +5226,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     e.target.value = '';
   });
+
+  // Restore API session from stored refresh token (no-op for auth-r1 fallback)
+  if (typeof restoreSession === 'function') await restoreSession();
 
   // Auth gate: every load shows the login screen unless an active session exists
   if (!getCurrentUser()) {
@@ -11039,6 +10995,220 @@ function rotationDayHtml(day) {
 })();
 
 
+/* ===== js/migrate-r1.js ===== */
+// migrate-r1.js — "Migrate to Cloud" page at #/migrate.
+// Shows a file picker + progress bar. Calls POST /api/migrate with the
+// exported backup JSON. On success, hides the sidebar entry permanently.
+
+window.renderMigrateView = async function renderMigrateView(main) {
+  const DONE_KEY = 'vc:migrated';
+
+  main.innerHTML = `
+    <div class="migrate-page" style="max-width:560px;margin:0 auto;padding:32px 16px;">
+      <h2 style="margin-bottom:8px;">☁️ Migrate to Cloud</h2>
+      <p style="color:var(--text-muted,#888);margin-bottom:24px;">
+        Move your closet from this device to the TMF Closet cloud server so
+        you can access it anywhere. Your photos and all your data will be
+        uploaded securely to your account on <strong>api.tmfcloset.com</strong>.
+      </p>
+
+      <div class="migrate-steps" style="margin-bottom:28px;font-size:0.95em;">
+        <div style="margin-bottom:12px;">
+          <strong>Step 1 — Export your backup</strong><br>
+          Click the <strong>≡ menu → Export Backup</strong> button to download
+          a <code>.json</code> file from your device.
+        </div>
+        <div style="margin-bottom:12px;">
+          <strong>Step 2 — Upload here</strong><br>
+          Pick that file below. Your closet, outfits, and wishlist will all be
+          uploaded to your cloud account in one shot.
+        </div>
+        <div>
+          <strong>Step 3 — Done</strong><br>
+          Once the upload succeeds you can clear your browser data without
+          losing anything.
+        </div>
+      </div>
+
+      <div id="migrateDropZone" style="
+        border:2px dashed var(--border,#ddd);
+        border-radius:12px;
+        padding:32px 24px;
+        text-align:center;
+        cursor:pointer;
+        margin-bottom:20px;
+        transition:border-color 0.15s;
+      ">
+        <div style="font-size:2em;margin-bottom:8px;">📂</div>
+        <div style="font-weight:600;margin-bottom:4px;">Click to choose backup file</div>
+        <div style="font-size:0.85em;color:var(--text-muted,#999);">
+          virtual-closet-backup-YYYY-MM-DD.json
+        </div>
+        <input type="file" id="migrateFileInput" accept=".json,application/json"
+               style="display:none">
+      </div>
+
+      <div id="migrateProgress" hidden style="margin-bottom:20px;">
+        <div style="margin-bottom:6px;font-size:0.9em;" id="migrateStatusText">Uploading…</div>
+        <div style="background:var(--border,#eee);border-radius:4px;overflow:hidden;">
+          <div id="migrateProgressBar" style="
+            height:8px;background:var(--accent,#6c63ff);width:0%;
+            transition:width 0.3s;
+          "></div>
+        </div>
+      </div>
+
+      <div id="migrateResult" hidden style="
+        padding:14px 18px;border-radius:8px;font-size:0.95em;margin-bottom:16px;
+      "></div>
+
+      <button id="migrateUploadBtn" class="btn" disabled style="width:100%;">
+        Upload Backup
+      </button>
+    </div>
+  `;
+
+  const dropZone   = document.getElementById('migrateDropZone');
+  const fileInput  = document.getElementById('migrateFileInput');
+  const uploadBtn  = document.getElementById('migrateUploadBtn');
+  const progress   = document.getElementById('migrateProgress');
+  const progressBar= document.getElementById('migrateProgressBar');
+  const statusText = document.getElementById('migrateStatusText');
+  const result     = document.getElementById('migrateResult');
+
+  let pendingData = null;
+  let pendingName = '';
+
+  // ── File selection ──────────────────────────────────────────────────────
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--accent,#6c63ff)';
+  });
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.style.borderColor = 'var(--border,#ddd)';
+  });
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--border,#ddd)';
+    const f = e.dataTransfer.files[0];
+    if (f) _loadFile(f);
+  });
+  fileInput.addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (f) _loadFile(f);
+  });
+
+  function _loadFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!data || !Array.isArray(data.items)) throw new Error('Missing "items" array');
+        pendingData = data;
+        pendingName = file.name;
+        const items    = data.items.length;
+        const outfits  = Array.isArray(data.outfits)  ? data.outfits.length  : 0;
+        const wishlist = Array.isArray(data.wishlist) ? data.wishlist.length : 0;
+        dropZone.innerHTML = `
+          <div style="font-size:1.5em;margin-bottom:6px;">✅</div>
+          <div style="font-weight:600;margin-bottom:4px;">${file.name}</div>
+          <div style="font-size:0.85em;color:var(--text-muted,#888);">
+            ${items} item${items!==1?'s':''}, ${outfits} outfit${outfits!==1?'s':''},
+            ${wishlist} wishlist item${wishlist!==1?'s':''}
+          </div>
+        `;
+        uploadBtn.disabled = false;
+        _clearResult();
+      } catch (err) {
+        _showResult('error', '⚠️ That file doesn\'t look like a closet backup: ' + err.message);
+        uploadBtn.disabled = true;
+        pendingData = null;
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ── Upload ──────────────────────────────────────────────────────────────
+  uploadBtn.addEventListener('click', async () => {
+    if (!pendingData) return;
+    uploadBtn.disabled = true;
+    _clearResult();
+
+    // Show progress
+    progress.hidden = false;
+    progressBar.style.width = '10%';
+    statusText.textContent = 'Uploading backup… (this may take a minute for large photo libraries)';
+
+    // Animate progress bar to give feedback during the long upload
+    let fakeProgress = 10;
+    const ticker = setInterval(() => {
+      fakeProgress = Math.min(fakeProgress + 3, 85);
+      progressBar.style.width = fakeProgress + '%';
+    }, 800);
+
+    try {
+      const res = await apiFetch('/api/migrate', { method: 'POST', body: pendingData });
+      clearInterval(ticker);
+      progressBar.style.width = '100%';
+      statusText.textContent = 'Complete!';
+
+      const { imported, errors } = res;
+      let msg = `✅ Migration complete!<br>
+        Imported <strong>${imported.items}</strong> items, 
+        <strong>${imported.outfits}</strong> outfits, 
+        <strong>${imported.wishlist}</strong> wishlist items.`;
+      if (errors && errors.length) {
+        msg += `<br><small style="color:#e57373;">${errors.length} row(s) had errors — check the browser console.</small>`;
+        console.warn('[migrate] errors:', errors);
+      }
+      _showResult('success', msg);
+
+      // Mark migration done — hide the sidebar entry
+      try { localStorage.setItem(DONE_KEY, '1'); } catch (_) {}
+      _hideMigrateNav();
+
+      uploadBtn.textContent = 'Migrate again';
+      uploadBtn.disabled = false;
+    } catch (err) {
+      clearInterval(ticker);
+      progress.hidden = true;
+      progressBar.style.width = '0%';
+      _showResult('error', '❌ Upload failed: ' + (err.message || String(err)));
+      uploadBtn.disabled = false;
+      console.error('[migrate]', err);
+    }
+  });
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  function _showResult(type, html) {
+    result.hidden = false;
+    result.style.background = type === 'success'
+      ? 'rgba(76,175,80,0.12)' : 'rgba(229,115,115,0.12)';
+    result.style.border = type === 'success'
+      ? '1px solid rgba(76,175,80,0.4)' : '1px solid rgba(229,115,115,0.4)';
+    result.innerHTML = html;
+  }
+  function _clearResult() {
+    result.hidden = true;
+    result.innerHTML = '';
+  }
+  function _hideMigrateNav() {
+    const link = document.querySelector('.nav-link[href="#/migrate"]');
+    if (link) {
+      const li = link.closest('li') || link.parentElement;
+      if (li) li.style.display = 'none';
+    }
+  }
+
+  // If already migrated before, show a note
+  if (localStorage.getItem(DONE_KEY)) {
+    _showResult('success', '✅ You\'ve already migrated this device\'s data. You can migrate again if you exported new items.');
+    _hideMigrateNav();
+  }
+};
+
+
 /* ===== js/fit-r1.js ===== */
 // fit-r1.js — make the .tile-grid fill the visible viewport.
 // Picks columns by viewport width, rows = ceil(tiles/cols), then sets
@@ -11440,275 +11610,187 @@ function rotationDayHtml(day) {
 })();
 
 
-/* ===== js/drawer-r1.js ===== */
-// drawer-r1.js — Top-nav drawer + account dropdown wiring (Phase 2B)
-// ------------------------------------------------------------------
-// Owns the open/close state of the slide-in drawer and the account
-// dropdown. Wires the drawer's Sign Out / Export / Import buttons to
-// the existing hidden sidebar buttons via click-proxy, so existing
-// app-r10.js logic (sign-in / sign-out / backup import-export) keeps
-// working without any changes.
-//
-// IDs introduced by this module's HTML (in index.html):
-//   #drawerToggle      — hamburger button in top header
-//   #drawer            — outer drawer container (overlay + panel)
-//   #drawerBackdrop    — clickable backdrop behind the panel
-//   #drawerClose       — × button inside the drawer panel
-//   #drawerItemCount   — span that mirrors the sidebar's #itemCount
-//   #drawerExportBtn   — proxies #exportBtn
-//   #drawerImportBtn   — proxies #importInput (file picker)
-//   #searchToggle      — magnifier in top header (Phase 2C will wire)
-//   #accountToggle     — account icon in top header
-//   #accountDropdown   — dropdown anchored under #accountToggle
-//   #accountUsername   — span inside dropdown showing @username
-//   #accountSignOut    — proxies #signOutBtn
+/* ===== js/photo-suggest-r1.js ===== */
+// photo-suggest-r1.js — heuristic color-based item suggestions from a daily photo.
+// Local/no-server: extracts dominant photo colors via canvas, maps each to the
+// nearest palette color in data-r9.js's COLOR_HEX, then ranks closet items by
+// how well their `color` field overlaps. Exposes:
+//   - window.extractDominantColors(blob, maxColors=6) → [{rgb:[r,g,b], weight}]
+//   - window.suggestItemsFromPhoto(blob, items, {topN}) → [item, ...]
 
 (function () {
-  'use strict';
+  async function extractDominantColors(blob, maxColors = 6) {
+    if (!blob) return [];
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = rej;
+        i.src = url;
+      });
+      const canvas = document.createElement('canvas');
+      const SIZE = 80;
+      canvas.width = SIZE;
+      canvas.height = SIZE;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, SIZE, SIZE);
+      const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
 
-  function $(id) { return document.getElementById(id); }
+      // Quantize to 4 bits/channel → 4096 buckets, accumulate exact RGB sums
+      // so we can recover the bucket's centroid color.
+      const buckets = new Map();
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 128) continue; // transparent
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        // Skip near-white (skin/background washout) and near-black extremes,
+        // but keep a representative sample of each so they can still match.
+        const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+        const cur = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
+        cur.count++;
+        cur.r += r;
+        cur.g += g;
+        cur.b += b;
+        buckets.set(key, cur);
+      }
 
-  // ---- Drawer open / close ----------------------------------------
-  function openDrawer() {
-    var d = $('drawer');
-    if (!d) return;
-    d.hidden = false;
-    requestAnimationFrame(function () { d.classList.add('drawer--open'); });
-    document.body.classList.add('drawer-open');
-  }
-
-  function closeDrawer() {
-    var d = $('drawer');
-    if (!d) return;
-    d.classList.remove('drawer--open');
-    document.body.classList.remove('drawer-open');
-    setTimeout(function () { d.hidden = true; }, 220);
-  }
-
-  // ---- Account dropdown -------------------------------------------
-  function toggleAccountDropdown(force) {
-    var dd = $('accountDropdown');
-    if (!dd) return;
-    var willOpen = (typeof force === 'boolean') ? force : dd.hidden;
-    if (willOpen) {
-      // Pull the @username value the existing app code wrote into
-      // the (hidden) sidebar's user block.
-      var src = $('sidebarUserName');
-      var dst = $('accountUsername');
-      if (dst) dst.textContent = (src && src.textContent) ? src.textContent : '';
-      dd.hidden = false;
-      requestAnimationFrame(function () { dd.classList.add('dropdown--open'); });
-    } else {
-      dd.classList.remove('dropdown--open');
-      setTimeout(function () { dd.hidden = true; }, 160);
+      const total = SIZE * SIZE;
+      return [...buckets.values()]
+        .map(c => ({
+          rgb: [Math.round(c.r / c.count), Math.round(c.g / c.count), Math.round(c.b / c.count)],
+          weight: c.count / total,
+        }))
+        .sort((a, b) => b.weight - a.weight)
+        .slice(0, maxColors);
+    } finally {
+      URL.revokeObjectURL(url);
     }
   }
 
-  // ---- Item-count sync (drawer header) ----------------------------
-  // The sidebar's #itemCount text is updated by app-r10.js as items
-  // load. We mirror just the digits into the drawer's count.
-  function syncDrawerItemCount() {
-    var src = $('itemCount');
-    var dst = $('drawerItemCount');
-    if (!src || !dst) return;
-    var m = (src.textContent || '').match(/(\d+)/);
-    dst.textContent = m ? m[1] : '—';
+  function hexToRgb(hex) {
+    if (!hex || typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) return null;
+    return [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+  }
+  function rgbDist2(a, b) {
+    const dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2];
+    return dr * dr + dg * dg + db * db;
   }
 
-  // ---- Active-link sync -------------------------------------------
-  // Mirror the .active state from .nav-link onto .drawer-link so the
-  // drawer highlights the current route.
-  function syncDrawerActive() {
-    var hash = location.hash || '';
-    document.querySelectorAll('.drawer-link').forEach(function (link) {
-      var href = link.getAttribute('href') || '';
-      link.classList.toggle('active', href === hash);
+  // Nearest palette color name (Black, Olive, Hot Pink, …) for a single RGB.
+  function nearestPaletteColor(rgb) {
+    if (typeof COLOR_HEX !== 'object' || !COLOR_HEX) return null;
+    let bestName = null, bestDist = Infinity;
+    for (const [name, hex] of Object.entries(COLOR_HEX)) {
+      const target = hexToRgb(hex);
+      if (!target) continue;
+      const d = rgbDist2(rgb, target);
+      if (d < bestDist) { bestDist = d; bestName = name; }
+    }
+    return bestName;
+  }
+
+  async function suggestItemsFromPhoto(blob, items, options) {
+    options = options || {};
+    const topN = options.topN || 15;
+    if (!blob || !Array.isArray(items) || items.length === 0) return [];
+
+    let dominants;
+    try { dominants = await extractDominantColors(blob, 6); }
+    catch (_) { return []; }
+    if (!dominants.length) return [];
+
+    // Build canonical-color and family weights from the photo's dominant
+    // colors, weighted by pixel coverage.
+    const colorWeights = new Map();
+    const familyWeights = new Map();
+    for (const dc of dominants) {
+      const name = nearestPaletteColor(dc.rgb);
+      if (!name) continue;
+      colorWeights.set(name, (colorWeights.get(name) || 0) + dc.weight);
+      const fam = (typeof familyForColor === 'function') ? familyForColor(name) : null;
+      if (fam) familyWeights.set(fam, (familyWeights.get(fam) || 0) + dc.weight);
+    }
+
+    const scored = items.map(it => {
+      let s = 0;
+      const raw = (it.color || '').trim();
+      if (!raw) return { item: it, score: 0 };
+      const c = (typeof normalizeColor === 'function') ? normalizeColor(raw) : raw;
+      if (c && colorWeights.has(c)) s += colorWeights.get(c) * 5;
+      const fam = (typeof familyForColor === 'function') ? familyForColor(c) : null;
+      if (fam && familyWeights.has(fam)) s += familyWeights.get(fam) * 2;
+      return { item: it, score: s };
     });
+
+    return scored
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topN)
+      .map(x => x.item);
   }
 
-  // ---- Init -------------------------------------------------------
-  function init() {
-    var drawerToggle = $('drawerToggle');
-    if (drawerToggle) drawerToggle.addEventListener('click', openDrawer);
-
-    var drawerClose = $('drawerClose');
-    if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
-
-    var drawerBackdrop = $('drawerBackdrop');
-    if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawer);
-
-    // Close drawer when a link is tapped (after the route fires)
-    document.querySelectorAll('.drawer-link').forEach(function (link) {
-      link.addEventListener('click', function () {
-        setTimeout(closeDrawer, 60);
-      });
-    });
-
-    // Account button toggle + click-outside-to-close
-    var accountToggle = $('accountToggle');
-    if (accountToggle) {
-      accountToggle.addEventListener('click', function (e) {
-        e.stopPropagation();
-        toggleAccountDropdown();
-      });
+  // Heuristic: is this RGB likely a product-shot backdrop, skin tone, or
+  // shadow? Used to drop noise pixels before mapping to palette names.
+  function isBackdropOrSkin(rgb) {
+    const [r, g, b] = rgb;
+    const sum = r + g + b;
+    // Tighter near-white than v41. RGB(225,225,225) sums to 675 and below
+    // this threshold counts as a real (off-white) color; (230,230,230)
+    // sums to 690 and is treated as backdrop. Empirically this catches
+    // most JPEG-blurred white backgrounds without dropping true Cream/Ivory
+    // garments which sit around (230-245, 220-235, 200-225) → still a
+    // judgement call, but biased away from over-tagging White/Cream.
+    if (sum > 685) return true;        // near-white backdrop
+    if (sum < 60)  return true;        // pure black (rare in real photos)
+    // Skin tone: warm hue, R > G > B with modest spread. Covers fair to
+    // medium tones without nuking actual peach/coral garments (which tend
+    // to have R-B > 90 and a redder cast).
+    if (r > g && g > b && r >= 150 && r <= 245) {
+      const rb = r - b;
+      const gb = g - b;
+      if (rb >= 25 && rb <= 90 && gb >= 10 && gb <= 55) return true;
     }
-    document.addEventListener('click', function (e) {
-      var dd = $('accountDropdown');
-      var trig = $('accountToggle');
-      if (!dd || dd.hidden) return;
-      if (dd.contains(e.target)) return;
-      if (trig && trig.contains(e.target)) return;
-      toggleAccountDropdown(false);
-    });
+    return false;
+  }
 
-    // ESC closes both
-    document.addEventListener('keydown', function (e) {
-      if (e.key !== 'Escape') return;
-      var d = $('drawer');
-      var dd = $('accountDropdown');
-      if (d && !d.hidden) closeDrawer();
-      if (dd && !dd.hidden) toggleAccountDropdown(false);
-    });
-
-    // Account dropdown Sign Out — proxy to existing sidebar Sign Out
-    var accountSignOut = $('accountSignOut');
-    if (accountSignOut) {
-      accountSignOut.addEventListener('click', function () {
-        toggleAccountDropdown(false);
-        var sb = $('signOutBtn');
-        if (sb) sb.click();
-      });
+  // Single-best palette color from an image, used to tag closet items so the
+  // Insights color chart can group brand-specific names ("Anthracite",
+  // "Bluestone", etc.) into canonical palette buckets without overwriting
+  // the user's original purchase color name. Returns a palette name like
+  // 'Navy' or 'Olive' — null if no usable color is found.
+  async function nearestPaletteColorFromImage(blob) {
+    if (!blob) return null;
+    let dominants;
+    try { dominants = await extractDominantColors(blob, 12); }
+    catch (_) { return null; }
+    if (!dominants.length) return null;
+    // Drop near-white backdrop, near-pure-black, and skin tones.
+    const filtered = dominants.filter(dc => !isBackdropOrSkin(dc.rgb));
+    const pool = filtered.length ? filtered : dominants;
+    // Aggregate weight per palette name across the whole filtered pool.
+    // Picking just `filtered[0]` is brittle: garment can have multiple
+    // dominant clusters (folds, gradient, shadow) and the top cluster is
+    // sometimes a noisy transition color. Summing weights per palette name
+    // smooths that out.
+    const palWeights = new Map();
+    for (const dc of pool) {
+      const name = nearestPaletteColor(dc.rgb);
+      if (!name) continue;
+      palWeights.set(name, (palWeights.get(name) || 0) + dc.weight);
     }
-
-    // Drawer Export / Import — proxy to existing sidebar buttons
-    var drawerExportBtn = $('drawerExportBtn');
-    if (drawerExportBtn) {
-      drawerExportBtn.addEventListener('click', function () {
-        var sb = $('exportBtn');
-        if (sb) sb.click();
-      });
+    if (palWeights.size === 0) return null;
+    let best = null, bestW = -1;
+    for (const [name, w] of palWeights) {
+      if (w > bestW) { bestW = w; best = name; }
     }
-    var drawerImportBtn = $('drawerImportBtn');
-    if (drawerImportBtn) {
-      drawerImportBtn.addEventListener('click', function () {
-        var inp = $('importInput');
-        if (inp) inp.click();  // opens the OS file picker
-      });
-    }
-
-    // Search button — placeholder. Phase 2C will swap this for the
-    // real modal opener.
-    var searchToggle = $('searchToggle');
-    if (searchToggle) {
-      searchToggle.addEventListener('click', function () {
-        // no-op for now
-      });
-    }
-
-    // Sync drawer state on init + when the route changes
-    syncDrawerItemCount();
-    syncDrawerActive();
-    window.addEventListener('hashchange', syncDrawerActive);
-    setInterval(syncDrawerItemCount, 1500);
+    return best;
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-})();
-
-
-/* ===== js/scheme-r1.js ===== */
-// scheme-r1.js — Per-route scheme + page hero (Phase 2B.1)
-// ----------------------------------------------------------
-// Listens for hashchange and applies a scheme-* class to <body>
-// (drives --tmf-scheme-bg / --tmf-scheme-fg via style-guide-r1.css)
-// plus updates the .page-hero eyebrow + headline text. The scheme
-// class also colors anything else in the app that uses the
-// --tmf-scheme-* custom properties.
-//
-// HTML elements this module touches:
-//   #pageHero           — outer container (gets the scheme bg via CSS var)
-//   #pageHeroEyebrow    — small all-caps title above the headline
-//   #pageHeroHeadline   — italic Cormorant headline
-
-(function () {
-  'use strict';
-
-  var PAGES = {
-    'closet':        { scheme: 'scheme-cream',         eyebrow: 'THE CLOSET.',       headline: 'Find what you love.' },
-    'browse':        { scheme: 'scheme-cream',         eyebrow: 'BROWSE.',           headline: 'Shop by every angle.' },
-    'add':           { scheme: 'scheme-cream',         eyebrow: 'NEW ARRIVAL.',      headline: 'Add it to the record.' },
-    'shop':          { scheme: 'scheme-cream',         eyebrow: 'SHOP.',             headline: 'Find what fills the gap.' },
-
-    'wishlist':      { scheme: 'scheme-blush',         eyebrow: 'THE WISHLIST.',     headline: 'What you’re building toward.' },
-
-    'outfits':       { scheme: 'scheme-sage',          eyebrow: 'OUTFITS.',          headline: 'Saved looks, ready to wear.' },
-    'build':         { scheme: 'scheme-sage',          eyebrow: 'BUILD AN OUTFIT.',  headline: 'Mix what you own.' },
-    'capsule':       { scheme: 'scheme-sage',          eyebrow: 'CAPSULE.',          headline: 'A focused wardrobe.' },
-    'trip':          { scheme: 'scheme-sage',          eyebrow: 'TRIP PLANNER.',     headline: 'Pack with intention.' },
-    'styledna':      { scheme: 'scheme-sage',          eyebrow: 'STYLE DNA.',        headline: 'Your patterns, mapped.' },
-    'lookbook':      { scheme: 'scheme-sage',          eyebrow: 'LOOKBOOK.',         headline: 'Build your story.' },
-
-    'daily':         { scheme: 'scheme-soft-sea',      eyebrow: 'TODAY.',            headline: 'What you’re wearing now.' },
-    'slideshow':     { scheme: 'scheme-soft-sea',      eyebrow: 'WEAR LOG.',         headline: 'Every day, on the record.' },
-    'returns-due':   { scheme: 'scheme-soft-sea',      eyebrow: 'RETURNS DUE.',      headline: 'Don’t miss the window.' },
-
-    'top10':         { scheme: 'scheme-bright-teal',   eyebrow: 'MY TOP 10.',        headline: 'The pieces that earn their keep.' },
-    'compare':       { scheme: 'scheme-bright-teal',   eyebrow: 'COMPARE.',          headline: 'Side by side.' },
-    'colorpairs':    { scheme: 'scheme-bright-teal',   eyebrow: 'COLOR PAIRS.',      headline: 'What goes with what.' },
-    'rotation':      { scheme: 'scheme-bright-teal',   eyebrow: 'ROTATION.',         headline: 'Worn, not just owned.' },
-
-    'insights':      { scheme: 'scheme-mediterranean', eyebrow: 'INSIGHTS.',         headline: 'What your closet says.' },
-    'girlmath':      { scheme: 'scheme-mediterranean', eyebrow: 'GIRL MATH.',        headline: 'Track every dollar.' },
-    'notes':         { scheme: 'scheme-mediterranean', eyebrow: 'MY NOTES.',         headline: 'Quiet observations.' },
-
-    'receipts':      { scheme: 'scheme-terracotta',    eyebrow: 'RECEIPTS.',         headline: 'The paper trail.' },
-    'cart-import':   { scheme: 'scheme-terracotta',    eyebrow: 'CART IMPORTER.',    headline: 'Pull from where you shop.' },
-    'email-import':  { scheme: 'scheme-terracotta',    eyebrow: 'EMAIL IMPORTER.',   headline: 'Receipts straight from your inbox.' },
-    'paste-receipt': { scheme: 'scheme-terracotta',    eyebrow: 'PASTE A RECEIPT.',  headline: 'Type it in, save it forever.' },
-
-    'returned':      { scheme: 'scheme-charcoal',      eyebrow: 'THE RECORD.',       headline: 'What’s already happened.' }
-  };
-
-  var DEFAULT = PAGES.closet;
-  var SCHEME_CLASSES = [
-    'scheme-cream', 'scheme-blush', 'scheme-sage', 'scheme-soft-sea',
-    'scheme-bright-teal', 'scheme-mediterranean', 'scheme-terracotta', 'scheme-charcoal'
-  ];
-
-  function getRouteFromHash() {
-    var hash = location.hash || '';
-    var m = hash.match(/^#\/([^?\/]+)/);
-    return m ? m[1] : 'closet';
-  }
-
-  function applyForRoute() {
-    var route = getRouteFromHash();
-    var page = PAGES[route] || DEFAULT;
-
-    // Swap scheme class on <body>. Removes any previous scheme-*.
-    var body = document.body;
-    SCHEME_CLASSES.forEach(function (c) { body.classList.remove(c); });
-    body.classList.add(page.scheme);
-
-    // Update hero text
-    var eb = document.getElementById('pageHeroEyebrow');
-    var hl = document.getElementById('pageHeroHeadline');
-    if (eb) eb.textContent = page.eyebrow;
-    if (hl) hl.textContent = page.headline;
-  }
-
-  function init() {
-    applyForRoute();
-    window.addEventListener('hashchange', applyForRoute);
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  window.extractDominantColors = extractDominantColors;
+  window.suggestItemsFromPhoto = suggestItemsFromPhoto;
+  window.nearestPaletteColorFromImage = nearestPaletteColorFromImage;
 })();
