@@ -2464,3 +2464,291 @@ Service worker cache: `tmfcloset-v48`.
   conflicting with prior grid layout in styles.css. Rolling back
   by removing the override + un-hiding the sidebar restores the
   prior state.
+
+================================================================
+## Phase 35 — Backend Day 1 + Day 2 (2026-05-08)
+================================================================
+
+**Subject:** Begin the actual backend project. No production change. No
+ship. Day 1 = schema design + docs. Day 2 = code scaffold (auth only,
+endpoints not deployed). All work lives under a new top-level `server/`
+directory; the frontend is unchanged.
+
+### Why this is happening now
+
+Previous session (HANDOFF-v51) had the backend listed as the next big
+push and the Cloudflare Tunnel on the NAS was already healthy and
+ready for `api.tmfcloset.com`. Tiffany's actual closet data is currently
+stranded on the `tmquinones.github.io` origin behind the GitHub Pages
+CNAME redirect, and no forgot-password flow is possible against
+local-only auth. Both pains evaporate once a real backend is live.
+
+### Day 1 — schema design + audit
+
+**Deliverable:** `server/SCHEMA.md` (new file, ~500 lines).
+
+Audited every IndexedDB store + field by reading `js/db-r3.js`,
+`js/data-r9.js`, `js/closet-r10.js`, `js/wishlist-r6.js`,
+`js/outfits-r7.js`, `js/capsule-r1.js`, `js/daily-r1.js`,
+`js/notes-r1.js`, `js/ratings-r1.js`, `js/outfit-feedback-r1.js`,
+`js/receipts-r1.js`, `js/wear-r1.js`, `js/style-dna-r1.js`.
+
+**Key design decisions captured in the doc:**
+
+1. **One SQLite file, multi-tenant.** Every row that's user-scoped
+   carries `user_id` FK. Single DB makes backups/joins/migrations
+   trivially easy, which the per-user IndexedDB pattern does not.
+2. **Photos on the filesystem, not in the DB.** Layout
+   `/volume1/docker/tmfcloset/photos/<user_id>/<kind>/<uuid>.<ext>`.
+   DB stores the relative path; Express static middleware serves it
+   with auth checked per request.
+3. **Existing auto-increment integer PKs are preserved** for items,
+   outfits, wishlist, capsules, daily_outfits, user_notes — the
+   frontend already references them by integer (outfit.itemIds,
+   capsule.slots, daily.itemIds, outfit-feedback signature). New
+   tables (users, password_reset_tokens, refresh_tokens, photos)
+   use UUID `TEXT` PKs.
+4. **Timestamps: ISO-8601 UTC strings** instead of epoch ms. API
+   converts at the JSON boundary so existing client code is untouched.
+5. **Array fields:** queryable arrays (outfit.itemIds,
+   daily.itemIds, capsule.slots) get join tables; display-only
+   arrays (lifestyleCategories, seasons, tags, photos[]) get JSON
+   columns.
+6. **`items.wearLog[]` is dropped** as a denormalized cache —
+   reconstructed via `daily_outfits ⨝ daily_outfit_items`.
+7. **localStorage data migrates to server tables.**
+   `vc:outfitFeedback` becomes `outfit_feedback` + `outfit_bad_pairs`.
+   `vc:rotationViewMode`, theme, etc. become rows in
+   `user_preferences (user_id, key, value JSON)`.
+8. **Auth tables include `refresh_tokens`** from day one so
+   "sign out of all devices" / password-change-invalidates-sessions
+   come for free.
+
+**16 tables in total:** users, password_reset_tokens, refresh_tokens,
+items, item_extra_photos, outfits, outfit_items, wishlist, capsules,
+capsule_targets, capsule_slots, daily_outfits, daily_outfit_items,
+user_notes, outfit_feedback, outfit_bad_pairs, user_preferences.
+
+`item.totalPaid` is included in the schema even though the frontend
+doesn't write it yet — the v36/v52 totalPaid feature will land
+without needing a migration.
+
+### Day 2 — code scaffold
+
+**Deliverable:** `server/` directory, 12 source files + 5 ops files,
+~1000 lines total.
+
+**Stack:** Node 20 + Express 4 + better-sqlite3 11 + bcrypt 5 +
+jsonwebtoken 9 + @sendgrid/mail 8 + cors + helmet +
+express-rate-limit + dotenv + uuid.
+
+**File layout:**
+```
+server/
+├── package.json                      ← npm scripts: start, dev, migrate, check
+├── Dockerfile                        ← multi-stage Alpine, non-root, tini
+├── docker-compose.yml                ← bind 127.0.0.1:8787, /data mounts
+├── .env.example                      ← all env vars documented inline
+├── .gitignore / .dockerignore
+├── README.md                         ← local dev + NAS deploy walkthrough
+└── src/
+    ├── index.js                      ← Express app, CORS, helmet, JSON, graceful shutdown
+    ├── config.js                     ← env loader, reads *_FILE secret-mount paths,
+    │                                   refuses to boot in prod with placeholder JWT secret
+    ├── db.js                         ← better-sqlite3, WAL + foreign_keys, idempotent
+    │                                   migration runner tracked in _migrations table
+    ├── email.js                      ← @sendgrid/mail wrapper + dev fallback that logs
+    │                                   the email to stdout when no API key is configured
+    ├── migrations/
+    │   └── 001_initial.sql           ← full schema from SCHEMA.md as executable SQL
+    ├── middleware/
+    │   ├── auth.js                   ← JWT requireAuth (Bearer token from Authorization)
+    │   └── error.js                  ← asyncHandler + HttpError + central handler
+    ├── routes/
+    │   ├── health.js                 ← GET /api/health (used by Tunnel + docker healthcheck)
+    │   └── auth.js                   ← signup / login / refresh / logout / me /
+    │                                   forgot-password / reset-password
+    └── utils/
+        └── tokens.js                 ← UUID, crypto.randomBytes 32-byte URL-safe tokens,
+                                        JWT sign/verify (HS256, 15 min access)
+```
+
+**Auth flow as implemented:**
+
+- `POST /api/auth/signup` — creates user, bcrypt cost 12, issues access
+  + refresh token pair.
+- `POST /api/auth/login` — rate-limited (20 / 15min). Always runs
+  bcrypt.compare even when the user doesn't exist (against a fixed
+  dummy hash) so timing doesn't leak email existence.
+- `POST /api/auth/refresh` — rotates the refresh token (revokes old,
+  issues new). Both access + refresh expire if not used within their TTLs.
+- `POST /api/auth/logout` — authenticated. With body `refreshToken`
+  revokes that one; without, revokes ALL refresh tokens for the user.
+- `GET /api/auth/me` — sanity check; returns the current user record.
+- `POST /api/auth/forgot-password` — rate-limited (5 / hour). Always
+  responds with the same generic 200 ack regardless of whether the
+  email exists. Reset token is 32 random bytes, URL-safe base64,
+  1-hour TTL, single-use. Email send is fire-and-forget so timing is
+  also enumeration-resistant.
+- `POST /api/auth/reset-password` — verifies token (not expired, not
+  used), updates password_hash, marks token used, revokes all
+  refresh tokens for that user, all in one transaction.
+
+**Verification:**
+
+```
+$ for f in src/index.js src/config.js src/db.js src/email.js \
+           src/middleware/auth.js src/middleware/error.js \
+           src/routes/auth.js src/routes/health.js \
+           src/utils/tokens.js; do
+    node --check "$f"
+  done
+# all 9 OK
+
+$ python3 -c "import sqlite3; con=sqlite3.connect(':memory:'); \
+              con.executescript(open('src/migrations/001_initial.sql').read()); \
+              print('17 tables, 22 indexes')"
+# 17 tables (matches SCHEMA.md), 22 indexes
+```
+
+**Not done yet:**
+- npm install / actual boot. better-sqlite3 + bcrypt need native
+  compilation; Tiffany will run `npm install` on the NAS as part of
+  the docker build on Day 3.
+- Closet endpoints (items / outfits / wishlist / etc) — Day 4-5.
+- Frontend wiring — `auth-r1.js` rewrite to call `/api/auth/*`,
+  `db-r3.js` rewrite as API client, one-time "migrate to cloud"
+  button. Day 4-5.
+- Live deploy. That's Day 3 — depends on Tiffany sshing into the NAS,
+  generating the JWT secret, signing up for SendGrid, and adding the
+  api.tmfcloset.com hostname in the Cloudflare Zero Trust dashboard.
+
+### Tasks at end of session
+
+```
+#1  ✓  Verify live site is on v51              (was 1778290000000, matched)
+#2     Smoke-test v51 design + Insights tabs   (deferred; tabs aren't broken,
+                                                empty-state confusion + closet
+                                                data stranded on old origin)
+#3     Build totalPaid feature                  (deferred to after backend lands)
+#4  ✓  Backend Day 1 — schema + docs           (server/SCHEMA.md)
+#5     Implement forgot-password flow          (blocked on #8 until backend deploys)
+#6     Restore Tiffany's closet data            (deferred — needs CNAME removal
+                                                + export/import roundtrip; cleaner
+                                                to do this against the live
+                                                backend than the local-only auth)
+#7  ✓  Fix Insights tabs                       (RESOLVED — wasn't a bug; empty-state
+                                                confusion. Console was clean.)
+#8  ✓  Backend Day 2 — scaffold + auth code    (this entry)
+#9     Backend Day 3 — deploy container         (next session)
+#10    Backend Day 4-5 — closet endpoints + migration tool
+```
+
+### Risk / known gotchas
+
+- **The Edit-tool truncation footgun** (documented at length in
+  HANDOFF-v51) did not bite this session — every server-side file was
+  written via the Write tool, and `node --check` passed on the first
+  attempt for all 9 JS files.
+- **better-sqlite3 + bcrypt require native compilation.** The
+  Dockerfile uses a multi-stage build with python3/make/g++ in the
+  build stage so the runtime Alpine image stays lean. If `docker
+  compose build` fails on the NAS, double-check Container Manager's
+  build settings — DSM 7.2+ should handle it without intervention.
+- **SendGrid sender verification** is a one-time DNS step at
+  Tiffany's domain registrar (Squarespace? GoDaddy?). Until that's
+  done, password-reset emails will send but land in spam. Day 3 task.
+- **CORS allowlist** includes both `https://tmfcloset.com` and
+  `https://tmquinones.github.io` so a transitional period works.
+  Once the closet data has fully migrated to the backend, drop
+  the github.io entry.
+
+
+### Phase 36 — Backend Day 4: deploy + migrate (2026-05-10)
+
+Full backend deployed to NAS; tiffany's real closet data extracted from
+the stranded `tmquinones.github.io` IndexedDB origin and imported into
+SQLite on the NAS via the new `/api/migrate` endpoint.
+
+Started the day with a misleading state: HANDOFF-2026-05-09 said
+backend was at auth+health-only and Days 4-5 were deferred, but git log
+revealed a v52 commit ("cloud API, auth-r2, db-r4, migrate page") had
+been pushed Sun May 10 evening. The frontend was already calling cloud
+endpoints, but the backend hadn't been deployed — the live site was
+effectively broken (every closet action 404'd). Day 4 became: deploy
+the already-built backend, extend the migrate endpoint to cover
+capsules + daily, then run the actual migration.
+
+Concretely:
+
+1. **Extended `server/src/routes/migrate.js`** to import capsules
+   (with target counts + slot assignments, item IDs remapped through
+   `itemIdMap` like outfits) and daily_outfits (with photo storage +
+   item-link table). Schema for these tables already existed in
+   `001_initial.sql`. Updated counts response shape from
+   `{items, outfits, wishlist}` to add `{capsules, daily}`.
+2. **Touched `js/migrate-r1.js`** so the success-message text
+   surfaces capsule + daily counts when present. Frontend bumped
+   to v53 (?v=1778461231784, cache `tmfcloset-v53`).
+3. **SCP'd `server/src/` to NAS** via `scp -O` (Windows OpenSSH ↔
+   Synology DSM legacy mode). `sudo docker compose restart` from
+   SSH. Boot logs clean: all 12 routers mounted, `listening on :8787`.
+   Smoke tested via `curl https://api.tmfcloset.com/api/health`
+   (200) + `/api/items` (401 = auth middleware engaged, route
+   mounted).
+4. **Extracted tiffany's stranded data.** Removed `tmfcloset.com`
+   from repo Pages custom-domain so the github.io → tmfcloset.com 301
+   redirect would stop. Visited `tmquinones.github.io/virtual-closet/`
+   in a regular Chrome tab (not incognito — separate storage there)
+   with DevTools "Disable cache" on. Ran a self-contained console
+   snippet that opened the per-user IndexedDB
+   (`virtual-closet-u_mokq3uma_j9x99l`), read 6 stores, base64-encoded
+   photo blobs, downloaded a 36 MB JSON envelope. Counts: 176 items,
+   3 outfits, 6 wishlist, 1 capsule, 3 daily log entries.
+5. **Restored custom domain.** Required user-level domain
+   verification because the verified-domains feature was on — added
+   `_github-pages-challenge-tmquinones` TXT record in Cloudflare DNS,
+   GitHub verified instantly. Repo Pages → Custom domain re-set to
+   `tmfcloset.com`. Custom-domain re-set needed a fresh Pages build,
+   triggered via empty commit `git push`. Cloudflare cache purged to
+   flush the cached 404. Hard-reload → site loaded.
+6. **Tiffany created cloud account** (`tiffany` username + a new
+   password — cloud-side bcrypt hash, no longer recoverable via the
+   localStorage hack since auth-r2 talks to the API). Visited
+   `/#/migrate`, uploaded JSON, server processed in ~30 sec. Success
+   message reported `176 items, 3 outfits, 6 wishlist items` (capsule
+   + daily import succeeded server-side but weren't surfaced in the
+   message text — she was on cached v52 frontend; v53 surfaces them).
+7. **Spot-checked the live site.** `/#/closet` shows 169 active
+   pieces (176 − 7 returned/sold; expected). Photos render from the
+   API. Returns-due banner picks up the 10 items approaching deadline.
+
+After migration, Tiffany noticed the hamburger menu (≡) wasn't
+working. Bundle audit revealed **v52 silently dropped `drawer-r1.js` +
+`scheme-r1.js` from the SOURCES list** when it shipped Sun evening —
+the v51 bundle had them, v52 lost them, v53 I rebuilt also lost them.
+Built v54 with both restored (44 sources), bumped cache, pushed.
+Tiffany unregistered the service worker, cleared site data, signed
+back in, hamburger works.
+
+**Frontend final state:** `?v=1778464290732`, cache `tmfcloset-v54`,
+528 KB / 44 sources.
+
+**Backend final state:** Full 12-route API live at api.tmfcloset.com.
+Schema migrated. tiffany's 176-item closet sitting in SQLite at
+`/volume1/docker/tmfcloset/db/tmfcloset.db`, photos at
+`/volume1/docker/tmfcloset/photos/`.
+
+Edit-tool truncation footgun struck again on the migrate.js update:
+heredoc-passed string anchor mismatched against unicode box-drawing
+chars in the source. Recovery: switched to a smaller unique anchor
+(`"  try {\n    importItems..."`) and passed it via `python3 -c
+"text.replace(...)"` via bash, which worked first try. Pattern is
+stable now: never use the Edit tool for >10-line inserts; always use
+the Python heredoc.
+
+The bundle-source-list silent-drop is a new failure mode worth
+flagging in CLAUDE.md / handoffs: visually check the SOURCES list
+length after every build (`grep -oE "js/[a-z0-9_-]*\.js" |
+wc -l` against the bundle's source comment line). 44 today; drops
+without explanation = a file got cut.
