@@ -849,3 +849,54 @@ select {
     font-size: 12px;
   }
 }
+
+/* ============================================================
+   Mobile follow-ups (v58) — Add Item color row, page margins,
+   modal scrolling on iOS.
+============================================================ */
+
+/* A bit more breathing room on small screens (was 16px, now 18-20px) */
+@media (max-width: 600px) {
+  .main {
+    padding: 20px 18px 60px !important;
+  }
+}
+@media (max-width: 430px) {
+  .main {
+    padding: 18px 16px 60px !important;
+  }
+}
+
+/* Add Item — Color row gets cramped when input + "From photo" button
+   share a single line on narrow screens. Stack them. */
+@media (max-width: 500px) {
+  .field .row {
+    flex-wrap: wrap;
+  }
+  .field .row > .input {
+    min-width: 0;
+    flex: 1 1 100% !important;
+  }
+  .field .row > .btn {
+    flex: 0 0 auto;
+  }
+}
+
+/* Modal scrolling on iOS. Reliable touch scrolling inside .modal-panel
+   plus iOS-Safari momentum. */
+.modal-panel {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+@media (max-width: 600px) {
+  .modal-panel {
+    /* On small phones, fill the screen with a small margin so the form
+       has real estate to scroll through. */
+    width: calc(100vw - 24px) !important;
+    max-height: calc(100vh - 24px) !important;
+    border-radius: 12px;
+  }
+  .modal-content {
+    padding: 20px !important;
+  }
+}

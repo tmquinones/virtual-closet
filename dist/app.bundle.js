@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-11 19:48:31 */
+/* TMF Closet bundle — built 2026-05-11 20:16:41 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -322,16 +322,35 @@ function showToast(message, duration = 2400) {
   showToast._t = setTimeout(() => { toast.hidden = true; }, duration);
 }
 
+// iOS Safari/Chrome let touch scrolls bleed through `overflow: hidden`
+// unless you also lock the body's position. We save the scroll position
+// when opening and restore it on close so the page doesn't jump.
+let _modalScrollY = 0;
 function openModal(html) {
   const modal = document.getElementById('modal');
   document.getElementById('modalContent').innerHTML = html;
   modal.hidden = false;
-  document.body.style.overflow = 'hidden';
+  _modalScrollY = window.scrollY || window.pageYOffset || 0;
+  const body = document.body;
+  body.style.position = 'fixed';
+  body.style.top = '-' + _modalScrollY + 'px';
+  body.style.left = '0';
+  body.style.right = '0';
+  body.style.width = '100%';
+  body.style.overflow = 'hidden';
 }
 
 function closeModal() {
   document.getElementById('modal').hidden = true;
-  document.body.style.overflow = '';
+  const body = document.body;
+  body.style.position = '';
+  body.style.top = '';
+  body.style.left = '';
+  body.style.right = '';
+  body.style.width = '';
+  body.style.overflow = '';
+  // Restore scroll position
+  window.scrollTo(0, _modalScrollY);
 }
 
 document.addEventListener('click', e => {
@@ -10365,6 +10384,24 @@ function rotationDayHtml(day) {
       row.style.opacity = '0';
       setTimeout(() => { try { row.remove(); } catch (_) {} }, 220);
     }
+    // Optimistically decrement the sidebar / drawer badge so the count
+    // updates the instant the user taps, not after the API responds.
+    function decrementBadge() {
+      const badges = document.querySelectorAll('a[data-route="returns-due"] .rd-nav-badge');
+      badges.forEach(badge => {
+        const cur = Number(badge.textContent) || 0;
+        if (cur > 1) badge.textContent = String(cur - 1);
+        else badge.remove();
+      });
+      // Also update the in-page subtitle ("N in alert window · M just past deadline")
+      const subtitle = main.querySelector('.page-subtitle');
+      if (subtitle && subtitle.textContent) {
+        subtitle.textContent = subtitle.textContent.replace(/^(\d+)/, (_, n) => {
+          const v = Math.max(0, Number(n) - 1);
+          return String(v);
+        });
+      }
+    }
     main.querySelectorAll('[data-rd-mark]').forEach(b => {
       b.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -10372,6 +10409,7 @@ function rotationDayHtml(day) {
         const status = b.dataset.rdStatus;
         const row = b.closest('.rd-row');
         fadeAndRemove(row);
+        decrementBadge();
         showToast('Marked as returned');
         try {
           await dbUpdateItem(id, { status, returnDecided: true });
@@ -10388,6 +10426,7 @@ function rotationDayHtml(day) {
         const id = Number(b.dataset.rdKeep);
         const row = b.closest('.rd-row');
         fadeAndRemove(row);
+        decrementBadge();
         showToast('Kept — removed from Returns Due');
         try {
           await dbUpdateItem(id, { returnDecided: true });
