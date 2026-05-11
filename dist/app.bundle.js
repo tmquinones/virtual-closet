@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-11 20:16:41 */
+/* TMF Closet bundle — built 2026-05-11 20:22:21 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -691,13 +691,24 @@ function _buildUser(apiUser) {
 }
 
 function _setSession(data) {
-  // data: { accessToken, accessTokenExpiresIn, refreshToken, refreshTokenExpiresAt, user }
+  // data: { accessToken, accessTokenExpiresIn, refreshToken, refreshTokenExpiresAt, user? }
+  // The refresh endpoint does NOT return a user object — only tokens. Without
+  // this fallback, restoreSession() would refresh successfully but leave
+  // _currentUser null, dropping the user back to the login screen even
+  // though they're effectively still signed in.
   _accessToken    = data.accessToken;
   _accessTokenExp = Date.now() + ((data.accessTokenExpiresIn || 900) - 30) * 1000;
   if (data.refreshToken) _saveRefreshToken(data.refreshToken);
   if (data.user) {
     _currentUser = _buildUser(data.user);
     _cacheUser(_currentUser);
+  } else if (!_currentUser) {
+    // Refresh response carried no user — pull from localStorage cache so
+    // restoreSession() can return the user and the auth gate passes.
+    try {
+      const cached = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+      if (cached && cached.id) _currentUser = cached;
+    } catch (_) { /* ignore */ }
   }
   if (typeof resetDb === 'function') resetDb();
 }

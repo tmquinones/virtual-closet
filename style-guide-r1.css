@@ -858,12 +858,12 @@ select {
 /* A bit more breathing room on small screens (was 16px, now 18-20px) */
 @media (max-width: 600px) {
   .main {
-    padding: 20px 18px 60px !important;
+    padding: 22px 22px 60px !important;
   }
 }
 @media (max-width: 430px) {
   .main {
-    padding: 18px 16px 60px !important;
+    padding: 20px 20px 60px !important;
   }
 }
 
