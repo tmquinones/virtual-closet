@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-11 15:21:01 */
+/* TMF Closet bundle — built 2026-05-11 18:48:09 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -5148,6 +5148,19 @@ function wireLoginScreen() {
         await createAccount(u, p);
         await tryMigrate();
       }
+
+      // Ask the browser to save credentials so iOS Safari / Chrome / etc.
+      // offer to remember the password and autofill next time. Requires the
+      // form's autocomplete="username" + autocomplete="current-password"
+      // attributes (already set in index.html). This is a no-op on browsers
+      // that don't support the Credential Management API.
+      try {
+        if (window.PasswordCredential) {
+          const cred = new PasswordCredential({ id: u, password: p, name: u });
+          await navigator.credentials.store(cred);
+        }
+      } catch (_) { /* user declined or feature unavailable — ignore */ }
+
       document.getElementById('loginPassword').value = '';
       hideLoginOverlay();
       try {

@@ -743,4 +743,75 @@ body {
   }
   .page-hero-headline {
     font-size: 26px;
-  
+  }
+}
+
+/* ============================================================
+   Mobile / iOS fixes (Phase 36 follow-up, 2026-05-10)
+   ------------------------------------------------------------
+   - Kill horizontal scroll on iPhone
+   - Reduce .main padding on small screens (was 48px both sides)
+   - Allow iOS Safari's auto-zoom on inputs (font-size < 16px)
+     so user can see what they're typing
+   - Page hero / drawer / top header tweaks for narrow viewports
+============================================================ */
+
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* Keep inputs below the iOS 16px auto-zoom threshold so tapping
+   an input zooms in. (User explicitly wants this behavior.) */
+.input, input[type="text"], input[type="password"], input[type="email"],
+input[type="search"], input[type="number"], input[type="date"], textarea,
+select {
+  font-size: 15px;
+}
+
+@media (max-width: 600px) {
+  /* Shrink the page padding so content uses the whole viewport */
+  .main {
+    padding: 20px 16px 60px !important;
+  }
+
+  /* Anything that was wider than the viewport — clamp it */
+  .main > *, .main img, .main table, .main pre {
+    max-width: 100%;
+  }
+
+  /* Top header tightens up */
+  .top-header {
+    padding: 12px 14px;
+  }
+  .top-wordmark {
+    font-size: 20px;
+  }
+
+  /* Drawer takes the full width minus a small reveal */
+  .drawer-panel {
+    width: min(92vw, 360px) !important;
+  }
+
+  /* Account dropdown anchored properly inside viewport */
+  .account-dropdown {
+    right: 12px !important;
+    min-width: 200px;
+  }
+}
+
+/* iPhone-narrow specifically (most modern iPhones are ~390-430px) */
+@media (max-width: 430px) {
+  .main {
+    padding: 16px 12px 60px !important;
+  }
+  .page-hero {
+    padding: 1.5rem 1rem 1.2rem;
+  }
+  .page-hero-eyebrow {
+    font-size: 11px;
+  }
+  .page-hero-headline {
+    font-size: 22px;
+  }
+}
