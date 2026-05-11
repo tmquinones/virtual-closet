@@ -804,6 +804,20 @@ ap: 4px;
   line-height: 1.5;
 }
 
+.login-success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+}
+.login-heading {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
 /* Sidebar user block */
 .sidebar-user {
   display: flex; align-items: center; gap: 8px;
@@ -1367,14 +1381,4 @@ ap: 4px;
   align-items: center;
   justify-content: center;
   font-size: 22px;
-  color: var(--text-faint);
-}
-.suggest-shop-link {
-  font-size: 11.5px;
-  color: var(--text);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  display: inline-block;
-  margin-top: 2px;
-}
-.suggest-shop-link:hover { color: var(--accent); }
+  color:

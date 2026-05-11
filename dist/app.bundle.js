@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-11 01:51:20 */
+/* TMF Closet bundle — built 2026-05-11 15:21:01 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -4948,7 +4948,7 @@ function _renderTile(group) {
 /* ===== js/app-r11.js ===== */
 // app-r11.js — main router and app glue (API-backed auth + db, migrate page)
 
-const ROUTES = ['browse', 'closet', 'add', 'outfits', 'build', 'recover', 'audit', 'insights', 'wishlist', 'girlmath', 'trip', 'compare', 'capsule', 'returned', 'daily', 'slideshow', 'notes', 'receipts', 'returns-due', 'shop', 'top10', 'cart-import', 'email-import', 'migrate'];
+const ROUTES = ['browse', 'closet', 'add', 'outfits', 'build', 'recover', 'audit', 'insights', 'wishlist', 'girlmath', 'trip', 'compare', 'capsule', 'returned', 'daily', 'slideshow', 'notes', 'receipts', 'returns-due', 'shop', 'top10', 'cart-import', 'email-import', 'migrate', 'reset-password'];
 
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
@@ -5048,8 +5048,13 @@ window.addEventListener('hashchange', router);
 function showLoginOverlay() {
   document.getElementById('loginOverlay').hidden = false;
   document.querySelector('.app').style.display = 'none';
-  document.getElementById('sidebarUser').hidden = true;
-  setTimeout(() => document.getElementById('loginUsername').focus(), 50);
+  const sb = document.getElementById('sidebarUser');
+  if (sb) sb.hidden = true;
+  // If hash is a reset-password link, show that panel; otherwise sign-in.
+  const isReset = location.hash.startsWith('#/reset-password');
+  _loginShowPanel(isReset ? 'reset' : 'signin');
+  const focusId = isReset ? 'resetPassword' : 'loginUsername';
+  setTimeout(() => { const el = document.getElementById(focusId); if (el) el.focus(); }, 50);
 }
 
 function hideLoginOverlay() {
@@ -5059,52 +5064,72 @@ function hideLoginOverlay() {
   const userBlock = document.getElementById('sidebarUser');
   if (user && userBlock) {
     userBlock.hidden = false;
-    document.getElementById('sidebarUserName').textContent = '@' + user.username;
+    const nameEl = document.getElementById('sidebarUserName');
+    if (nameEl) nameEl.textContent = '@' + user.username;
   }
+}
+
+// Show one panel at a time inside the login overlay: 'signin' | 'forgot' | 'reset'
+function _loginShowPanel(panel) {
+  const loginPanel  = document.getElementById('loginPanel');
+  const forgotPanel = document.getElementById('forgotPanel');
+  const resetPanel  = document.getElementById('resetPanel');
+  if (loginPanel)  loginPanel.hidden  = (panel !== 'signin');
+  if (forgotPanel) forgotPanel.hidden = (panel !== 'forgot');
+  if (resetPanel)  resetPanel.hidden  = (panel !== 'reset');
+  setLoginError('');
+  ['forgotError','forgotSuccess','resetError','resetSuccess'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.hidden = true; el.textContent = ''; }
+  });
 }
 
 function setLoginError(msg) {
   const el = document.getElementById('loginError');
   if (!el) return;
-  if (msg) {
-    el.textContent = msg;
-    el.hidden = false;
-  } else {
-    el.textContent = '';
-    el.hidden = true;
-  }
+  if (msg) { el.textContent = msg; el.hidden = false; }
+  else     { el.textContent = '';  el.hidden = true;  }
 }
 
 function wireLoginScreen() {
-  const tabs = document.querySelectorAll('.login-tab');
+  const tabs      = document.querySelectorAll('.login-tab');
   const submitBtn = document.getElementById('loginSubmit');
-  const footnote = document.getElementById('loginFootnote');
+  const footnote  = document.getElementById('loginFootnote');
   let mode = 'signin';
-  // If no users exist yet, default to "Create account"
-  if (typeof userCount === 'function' && userCount() === 0) {
-    mode = 'signup';
-    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === 'signup'));
-    submitBtn.textContent = 'Create account';
-    if (footnote) footnote.textContent = 'No accounts on this device yet — create the first one.';
-  }
+
+  // Always default to sign-in. Accounts live in the cloud, not on the device,
+  // so "no stored token" does NOT mean "no account exists." The old behaviour
+  // that switched to "Create account" when userCount()===0 was breaking mobile
+  // logins: fresh device -> empty localStorage -> signup mode -> user got
+  // "That email is already registered" instead of a sign-in form.
+  const _syncTabFootnote = () => {
+    if (submitBtn) submitBtn.textContent = mode === 'signin' ? 'Sign in' : 'Create account';
+    if (footnote) footnote.textContent = mode === 'signin'
+      ? 'Sign in to access your closet from any device.'
+      : 'Create an account to start building your virtual closet.';
+    const fpl = document.getElementById('forgotPasswordLink');
+    if (fpl) fpl.style.display = mode === 'signin' ? '' : 'none';
+  };
+  _syncTabFootnote();
+
   tabs.forEach(t => {
     t.addEventListener('click', () => {
       mode = t.dataset.tab;
       tabs.forEach(x => x.classList.toggle('active', x === t));
-      submitBtn.textContent = mode === 'signin' ? 'Sign in' : 'Create account';
-      if (footnote) footnote.textContent = mode === 'signin'
-        ? 'Accounts are stored on this device only. Each account has its own private closet.'
-        : 'Enter an email address and password (minimum 8 characters).';
       setLoginError('');
+      _syncTabFootnote();
     });
   });
+
+  // ── Sign-in / Create-account submit ──────────────────────────────────────
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     setLoginError('');
-    submitBtn.disabled = true;
-    submitBtn.textContent = (mode === 'signin' ? 'Signing in…' : 'Creating account…');
+    if (submitBtn) submitBtn.disabled = true;
+    _syncTabFootnote();
+    if (submitBtn) submitBtn.textContent = (mode === 'signin' ? 'Signing in…' : 'Creating account…');
     try {
-      const u = document.getElementById('loginUsername').value;
+      const u = document.getElementById('loginUsername').value.trim();
       const p = document.getElementById('loginPassword').value;
       let migrated = null;
       const tryMigrate = async () => {
@@ -5117,9 +5142,6 @@ function wireLoginScreen() {
       };
       if (mode === 'signin') {
         await signIn(u, p);
-        // Self-heal: if this account has nothing yet and the guest DB has
-        // items (e.g. account was created before migration shipped),
-        // pull the guest data in.
         const existing = await dbGetAllItems();
         if (existing.length === 0) await tryMigrate();
       } else {
@@ -5128,19 +5150,17 @@ function wireLoginScreen() {
       }
       document.getElementById('loginPassword').value = '';
       hideLoginOverlay();
-      // If a cart import was stashed before signin, route to wishlist so it processes
       try {
         if (sessionStorage.getItem('vc:pendingCartImport') && !location.hash.startsWith('#/wishlist')) {
           location.hash = '#/wishlist';
         }
       } catch (_) {}
-      // Same handoff for an email order-import: route to closet so the
-      // deferred import lands in the user's own DB instead of the guest one.
       try {
         if (sessionStorage.getItem('vc:pendingOrderImport') && !location.hash.startsWith('#/closet')) {
           location.hash = '#/closet';
         }
       } catch (_) {}
+      if (location.hash.startsWith('#/reset-password')) location.hash = '#/closet';
       await router();
       await refreshSidebarCount();
       if (migrated) {
@@ -5149,12 +5169,114 @@ function wireLoginScreen() {
           ' from your previous closet');
       }
     } catch (err) {
-      setLoginError(err.message || String(err));
+      const msg = (err.message === 'Failed to fetch')
+        ? 'Could not reach the server — check your internet connection and try again.'
+        : (err.message || String(err));
+      setLoginError(msg);
     } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = mode === 'signin' ? 'Sign in' : 'Create account';
+      if (submitBtn) submitBtn.disabled = false;
+      _syncTabFootnote();
     }
   });
+
+  // ── Forgot-password link ──────────────────────────────────────────────────
+  const forgotLink = document.getElementById('forgotPasswordLink');
+  if (forgotLink) {
+    forgotLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      _loginShowPanel('forgot');
+      setTimeout(() => { const el = document.getElementById('forgotUsername'); if (el) el.focus(); }, 50);
+    });
+  }
+  const backToSignIn = document.getElementById('backToSignIn');
+  if (backToSignIn) {
+    backToSignIn.addEventListener('click', (e) => { e.preventDefault(); _loginShowPanel('signin'); });
+  }
+
+  // ── Forgot-password form submit ───────────────────────────────────────────
+  const forgotForm = document.getElementById('forgotForm');
+  if (forgotForm) {
+    forgotForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const forgotBtn = document.getElementById('forgotSubmit');
+      const forgotErr = document.getElementById('forgotError');
+      const forgotOk  = document.getElementById('forgotSuccess');
+      const username  = document.getElementById('forgotUsername').value.trim();
+      if (forgotErr) { forgotErr.hidden = true; forgotErr.textContent = ''; }
+      if (forgotOk)  { forgotOk.hidden  = true; forgotOk.textContent  = ''; }
+      if (forgotBtn) { forgotBtn.disabled = true; forgotBtn.textContent = 'Sending…'; }
+      try {
+        await forgotPassword(username);
+        if (forgotOk) {
+          forgotOk.textContent = 'Check your email — a reset link is on its way.';
+          forgotOk.hidden = false;
+        }
+        forgotForm.reset();
+      } catch (err) {
+        const msg = (err.message === 'Failed to fetch')
+          ? 'Could not reach the server — check your connection and try again.'
+          : (err.message || String(err));
+        if (forgotErr) { forgotErr.textContent = msg; forgotErr.hidden = false; }
+      } finally {
+        if (forgotBtn) { forgotBtn.disabled = false; forgotBtn.textContent = 'Send reset link'; }
+      }
+    });
+  }
+
+  // ── Reset-password form submit ────────────────────────────────────────────
+  const resetForm = document.getElementById('resetForm');
+  if (resetForm) {
+    const _getResetToken = () => {
+      const raw = location.hash.replace(/^#\/?/, '');
+      const q = raw.split('?')[1] || '';
+      const params = {};
+      q.split('&').filter(Boolean).forEach(p => {
+        const [k, v = ''] = p.split('=');
+        params[decodeURIComponent(k)] = decodeURIComponent(v);
+      });
+      return params.token || '';
+    };
+
+    resetForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const resetBtn = document.getElementById('resetSubmit');
+      const resetErr = document.getElementById('resetError');
+      const resetOk  = document.getElementById('resetSuccess');
+      const newPwd   = document.getElementById('resetPassword').value;
+      const token    = _getResetToken();
+      if (resetErr) { resetErr.hidden = true; resetErr.textContent = ''; }
+      if (resetOk)  { resetOk.hidden  = true; resetOk.textContent  = ''; }
+      if (!token) {
+        if (resetErr) {
+          resetErr.textContent = 'Reset link is missing or invalid. Request a new one.';
+          resetErr.hidden = false;
+        }
+        return;
+      }
+      if (resetBtn) { resetBtn.disabled = true; resetBtn.textContent = 'Saving…'; }
+      try {
+        await resetPassword(token, newPwd);
+        if (resetOk) {
+          resetOk.textContent = 'Password updated — please sign in with your new password.';
+          resetOk.hidden = false;
+        }
+        resetForm.reset();
+        setTimeout(() => _loginShowPanel('signin'), 2000);
+      } catch (err) {
+        const msg = (err.message === 'Failed to fetch')
+          ? 'Could not reach the server — check your connection and try again.'
+          : (err.message || String(err));
+        if (resetErr) { resetErr.textContent = msg; resetErr.hidden = false; }
+      } finally {
+        if (resetBtn) { resetBtn.disabled = false; resetBtn.textContent = 'Set new password'; }
+      }
+    });
+
+    const backFromReset = document.getElementById('backToSignInFromReset');
+    if (backFromReset) {
+      backFromReset.addEventListener('click', (e) => { e.preventDefault(); _loginShowPanel('signin'); });
+    }
+  }
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -5204,15 +5326,13 @@ window.addEventListener('DOMContentLoaded', async () => {
       });
       hideProgress();
 
-      // Remember the newly imported IDs so the closet view can offer a review
       try {
         sessionStorage.setItem('vc:lastImportIds', JSON.stringify(newIds));
         sessionStorage.setItem('vc:lastImportAt', String(Date.now()));
-      } catch (_) { /* sessionStorage may be unavailable in some contexts */ }
+      } catch (_) {}
 
       showToast(`Imported ${newIds.length} item${newIds.length === 1 ? '' : 's'}`);
 
-      // Force navigation to closet (or refresh if already there)
       if (location.hash !== '#/closet') {
         location.hash = '#/browse';
       } else {
@@ -5237,7 +5357,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   hideLoginOverlay();
 
-  if (!location.hash) {
+  if (!location.hash || location.hash === '#/' || location.hash === '#/reset-password') {
     location.hash = '#/browse';
   }
   await router();
@@ -5245,7 +5365,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 
-// Mobile sidebar toggle (separate listener — no awaits needed here)
+// Mobile sidebar toggle (separate listener)
 window.addEventListener('DOMContentLoaded', function () {
   var toggle = document.getElementById('sidebarToggle');
   var sidebar = document.querySelector('.sidebar');

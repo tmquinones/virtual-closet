@@ -245,25 +245,70 @@
           <div class="login-brand-tag">Wear what you <em>have</em>. Buy what you <em>love</em>.</div>
         </div>
       </div>
-      <div class="login-tabs">
-        <button class="login-tab active" data-tab="signin">Sign in</button>
-        <button class="login-tab" data-tab="signup">Create account</button>
+
+      <!-- Panel 1: Sign in / Create account -->
+      <div id="loginPanel">
+        <div class="login-tabs">
+          <button class="login-tab active" data-tab="signin">Sign in</button>
+          <button class="login-tab" data-tab="signup">Create account</button>
+        </div>
+        <form class="login-form" id="loginForm" autocomplete="on">
+          <div class="field">
+            <label class="field-label" for="loginUsername">Username</label>
+            <input class="input" id="loginUsername" type="text"
+              autocapitalize="none" autocorrect="off" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label class="field-label" for="loginPassword">Password</label>
+            <input class="input" id="loginPassword" type="password"
+              autocomplete="current-password" required />
+          </div>
+          <div class="login-error" id="loginError" hidden></div>
+          <button class="btn btn-primary btn-block" id="loginSubmit" type="submit">Sign in</button>
+          <p class="login-footnote" id="loginFootnote">Sign in to access your closet from any device.</p>
+          <p class="login-footnote" style="margin-top:4px">
+            <a href="#" id="forgotPasswordLink" style="color:inherit;opacity:0.65">Forgot password?</a>
+          </p>
+        </form>
       </div>
-      <form class="login-form" id="loginForm" autocomplete="off">
-        <div class="field">
-          <label class="field-label" for="loginUsername">Username</label>
-          <input class="input" id="loginUsername" type="text" autocapitalize="none" required />
-        </div>
-        <div class="field">
-          <label class="field-label" for="loginPassword">Password</label>
-          <input class="input" id="loginPassword" type="password" required />
-        </div>
-        <div class="login-error" id="loginError" hidden></div>
-        <button class="btn btn-primary btn-block" id="loginSubmit" type="submit">Sign in</button>
-        <p class="login-footnote" id="loginFootnote">
-          Accounts are stored on this device only. Each account has its own private closet.
-        </p>
-      </form>
+
+      <!-- Panel 2: Forgot password -->
+      <div id="forgotPanel" hidden>
+        <div class="login-heading">Reset your password</div>
+        <p class="login-footnote" style="margin:0 0 14px">Enter your username and we'll email a reset link.</p>
+        <form class="login-form" id="forgotForm" autocomplete="on">
+               <div class="field">
+            <label class="field-label" for="forgotUsername">Username</label>
+            <input class="input" id="forgotUsername" type="text"
+              autocapitalize="none" autocorrect="off" autocomplete="username" required />
+          </div>
+          <div class="login-error" id="forgotError" hidden></div>
+          <div class="login-success" id="forgotSuccess" hidden></div>
+          <button class="btn btn-primary btn-block" id="forgotSubmit" type="submit">Send reset link</button>
+          <p class="login-footnote" style="margin-top:12px">
+            <a href="#" id="backToSignIn" style="color:inherit;opacity:0.65">← Back to sign in</a>
+          </p>
+        </form>
+      </div>
+
+      <!-- Panel 3: Reset password (opened via link in reset email) -->
+      <div id="resetPanel" hidden>
+        <div class="login-heading">Set new password</div>
+        <p class="login-footnote" style="margin:0 0 14px">Choose a new password (8 characters minimum).</p>
+        <form class="login-form" id="resetForm" autocomplete="on">
+          <div class="field">
+            <label class="field-label" for="resetPassword">New password</label>
+            <input class="input" id="resetPassword" type="password"
+              autocomplete="new-password" minlength="8" required />
+          </div>
+          <div class="login-error" id="resetError" hidden></div>
+          <div class="login-success" id="resetSuccess" hidden></div>
+          <button class="btn btn-primary btn-block" id="resetSubmit" type="submit">Set new password</button>
+          <p class="login-footnote" style="margin-top:12px">
+            <a href="#" id="backToSignInFromReset" style="color:inherit;opacity:0.65">← Back to sign in</a>
+          </p>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -278,7 +323,7 @@
 
   <!-- Toast -->
   <div class="toast" id="toast" hidden></div>
-  <script src="dist/app.bundle.js?v=1778464290732"></script>
+  <script src="dist/app.bundle.js?v=1778512861304"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
