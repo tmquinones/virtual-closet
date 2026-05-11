@@ -1,5 +1,5 @@
-/* Virtual Closet bundle — built 2026-05-10 23:25:48 (v52) */
-/* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/photo-suggest-r1.js */
+/* TMF Closet bundle — built 2026-05-11 01:51:20 */
+/* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
 /* ===== js/data-r9.js ===== */
@@ -11157,7 +11157,10 @@ window.renderMigrateView = async function renderMigrateView(main) {
       let msg = `✅ Migration complete!<br>
         Imported <strong>${imported.items}</strong> items, 
         <strong>${imported.outfits}</strong> outfits, 
-        <strong>${imported.wishlist}</strong> wishlist items.`;
+        <strong>${imported.wishlist}</strong> wishlist items` +
+        (imported.capsules ? `, <strong>${imported.capsules}</strong> capsule${imported.capsules === 1 ? '' : 's'}` : '') +
+        (imported.daily ? `, <strong>${imported.daily}</strong> daily log entr${imported.daily === 1 ? 'y' : 'ies'}` : '') +
+        `.`;
       if (errors && errors.length) {
         msg += `<br><small style="color:#e57373;">${errors.length} row(s) had errors — check the browser console.</small>`;
         console.warn('[migrate] errors:', errors);
@@ -11607,6 +11610,280 @@ window.renderMigrateView = async function renderMigrateView(main) {
 
   // Expose for debugging
   window.ghSync = { open: openSyncModal, backup: uploadBackup, config: getConfig };
+})();
+
+
+/* ===== js/drawer-r1.js ===== */
+// drawer-r1.js — Top-nav drawer + account dropdown wiring (Phase 2B)
+// ------------------------------------------------------------------
+// Owns the open/close state of the slide-in drawer and the account
+// dropdown. Wires the drawer's Sign Out / Export / Import buttons to
+// the existing hidden sidebar buttons via click-proxy, so existing
+// app-r10.js logic (sign-in / sign-out / backup import-export) keeps
+// working without any changes.
+//
+// IDs introduced by this module's HTML (in index.html):
+//   #drawerToggle      — hamburger button in top header
+//   #drawer            — outer drawer container (overlay + panel)
+//   #drawerBackdrop    — clickable backdrop behind the panel
+//   #drawerClose       — × button inside the drawer panel
+//   #drawerItemCount   — span that mirrors the sidebar's #itemCount
+//   #drawerExportBtn   — proxies #exportBtn
+//   #drawerImportBtn   — proxies #importInput (file picker)
+//   #searchToggle      — magnifier in top header (Phase 2C will wire)
+//   #accountToggle     — account icon in top header
+//   #accountDropdown   — dropdown anchored under #accountToggle
+//   #accountUsername   — span inside dropdown showing @username
+//   #accountSignOut    — proxies #signOutBtn
+
+(function () {
+  'use strict';
+
+  function $(id) { return document.getElementById(id); }
+
+  // ---- Drawer open / close ----------------------------------------
+  function openDrawer() {
+    var d = $('drawer');
+    if (!d) return;
+    d.hidden = false;
+    requestAnimationFrame(function () { d.classList.add('drawer--open'); });
+    document.body.classList.add('drawer-open');
+  }
+
+  function closeDrawer() {
+    var d = $('drawer');
+    if (!d) return;
+    d.classList.remove('drawer--open');
+    document.body.classList.remove('drawer-open');
+    setTimeout(function () { d.hidden = true; }, 220);
+  }
+
+  // ---- Account dropdown -------------------------------------------
+  function toggleAccountDropdown(force) {
+    var dd = $('accountDropdown');
+    if (!dd) return;
+    var willOpen = (typeof force === 'boolean') ? force : dd.hidden;
+    if (willOpen) {
+      // Pull the @username value the existing app code wrote into
+      // the (hidden) sidebar's user block.
+      var src = $('sidebarUserName');
+      var dst = $('accountUsername');
+      if (dst) dst.textContent = (src && src.textContent) ? src.textContent : '';
+      dd.hidden = false;
+      requestAnimationFrame(function () { dd.classList.add('dropdown--open'); });
+    } else {
+      dd.classList.remove('dropdown--open');
+      setTimeout(function () { dd.hidden = true; }, 160);
+    }
+  }
+
+  // ---- Item-count sync (drawer header) ----------------------------
+  // The sidebar's #itemCount text is updated by app-r10.js as items
+  // load. We mirror just the digits into the drawer's count.
+  function syncDrawerItemCount() {
+    var src = $('itemCount');
+    var dst = $('drawerItemCount');
+    if (!src || !dst) return;
+    var m = (src.textContent || '').match(/(\d+)/);
+    dst.textContent = m ? m[1] : '—';
+  }
+
+  // ---- Active-link sync -------------------------------------------
+  // Mirror the .active state from .nav-link onto .drawer-link so the
+  // drawer highlights the current route.
+  function syncDrawerActive() {
+    var hash = location.hash || '';
+    document.querySelectorAll('.drawer-link').forEach(function (link) {
+      var href = link.getAttribute('href') || '';
+      link.classList.toggle('active', href === hash);
+    });
+  }
+
+  // ---- Init -------------------------------------------------------
+  function init() {
+    var drawerToggle = $('drawerToggle');
+    if (drawerToggle) drawerToggle.addEventListener('click', openDrawer);
+
+    var drawerClose = $('drawerClose');
+    if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+
+    var drawerBackdrop = $('drawerBackdrop');
+    if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawer);
+
+    // Close drawer when a link is tapped (after the route fires)
+    document.querySelectorAll('.drawer-link').forEach(function (link) {
+      link.addEventListener('click', function () {
+        setTimeout(closeDrawer, 60);
+      });
+    });
+
+    // Account button toggle + click-outside-to-close
+    var accountToggle = $('accountToggle');
+    if (accountToggle) {
+      accountToggle.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleAccountDropdown();
+      });
+    }
+    document.addEventListener('click', function (e) {
+      var dd = $('accountDropdown');
+      var trig = $('accountToggle');
+      if (!dd || dd.hidden) return;
+      if (dd.contains(e.target)) return;
+      if (trig && trig.contains(e.target)) return;
+      toggleAccountDropdown(false);
+    });
+
+    // ESC closes both
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      var d = $('drawer');
+      var dd = $('accountDropdown');
+      if (d && !d.hidden) closeDrawer();
+      if (dd && !dd.hidden) toggleAccountDropdown(false);
+    });
+
+    // Account dropdown Sign Out — proxy to existing sidebar Sign Out
+    var accountSignOut = $('accountSignOut');
+    if (accountSignOut) {
+      accountSignOut.addEventListener('click', function () {
+        toggleAccountDropdown(false);
+        var sb = $('signOutBtn');
+        if (sb) sb.click();
+      });
+    }
+
+    // Drawer Export / Import — proxy to existing sidebar buttons
+    var drawerExportBtn = $('drawerExportBtn');
+    if (drawerExportBtn) {
+      drawerExportBtn.addEventListener('click', function () {
+        var sb = $('exportBtn');
+        if (sb) sb.click();
+      });
+    }
+    var drawerImportBtn = $('drawerImportBtn');
+    if (drawerImportBtn) {
+      drawerImportBtn.addEventListener('click', function () {
+        var inp = $('importInput');
+        if (inp) inp.click();  // opens the OS file picker
+      });
+    }
+
+    // Search button — placeholder. Phase 2C will swap this for the
+    // real modal opener.
+    var searchToggle = $('searchToggle');
+    if (searchToggle) {
+      searchToggle.addEventListener('click', function () {
+        // no-op for now
+      });
+    }
+
+    // Sync drawer state on init + when the route changes
+    syncDrawerItemCount();
+    syncDrawerActive();
+    window.addEventListener('hashchange', syncDrawerActive);
+    setInterval(syncDrawerItemCount, 1500);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+
+/* ===== js/scheme-r1.js ===== */
+// scheme-r1.js — Per-route scheme + page hero (Phase 2B.1)
+// ----------------------------------------------------------
+// Listens for hashchange and applies a scheme-* class to <body>
+// (drives --tmf-scheme-bg / --tmf-scheme-fg via style-guide-r1.css)
+// plus updates the .page-hero eyebrow + headline text. The scheme
+// class also colors anything else in the app that uses the
+// --tmf-scheme-* custom properties.
+//
+// HTML elements this module touches:
+//   #pageHero           — outer container (gets the scheme bg via CSS var)
+//   #pageHeroEyebrow    — small all-caps title above the headline
+//   #pageHeroHeadline   — italic Cormorant headline
+
+(function () {
+  'use strict';
+
+  var PAGES = {
+    'closet':        { scheme: 'scheme-cream',         eyebrow: 'THE CLOSET.',       headline: 'Find what you love.' },
+    'browse':        { scheme: 'scheme-cream',         eyebrow: 'BROWSE.',           headline: 'Shop by every angle.' },
+    'add':           { scheme: 'scheme-cream',         eyebrow: 'NEW ARRIVAL.',      headline: 'Add it to the record.' },
+    'shop':          { scheme: 'scheme-cream',         eyebrow: 'SHOP.',             headline: 'Find what fills the gap.' },
+
+    'wishlist':      { scheme: 'scheme-blush',         eyebrow: 'THE WISHLIST.',     headline: 'What you’re building toward.' },
+
+    'outfits':       { scheme: 'scheme-sage',          eyebrow: 'OUTFITS.',          headline: 'Saved looks, ready to wear.' },
+    'build':         { scheme: 'scheme-sage',          eyebrow: 'BUILD AN OUTFIT.',  headline: 'Mix what you own.' },
+    'capsule':       { scheme: 'scheme-sage',          eyebrow: 'CAPSULE.',          headline: 'A focused wardrobe.' },
+    'trip':          { scheme: 'scheme-sage',          eyebrow: 'TRIP PLANNER.',     headline: 'Pack with intention.' },
+    'styledna':      { scheme: 'scheme-sage',          eyebrow: 'STYLE DNA.',        headline: 'Your patterns, mapped.' },
+    'lookbook':      { scheme: 'scheme-sage',          eyebrow: 'LOOKBOOK.',         headline: 'Build your story.' },
+
+    'daily':         { scheme: 'scheme-soft-sea',      eyebrow: 'TODAY.',            headline: 'What you’re wearing now.' },
+    'slideshow':     { scheme: 'scheme-soft-sea',      eyebrow: 'WEAR LOG.',         headline: 'Every day, on the record.' },
+    'returns-due':   { scheme: 'scheme-soft-sea',      eyebrow: 'RETURNS DUE.',      headline: 'Don’t miss the window.' },
+
+    'top10':         { scheme: 'scheme-bright-teal',   eyebrow: 'MY TOP 10.',        headline: 'The pieces that earn their keep.' },
+    'compare':       { scheme: 'scheme-bright-teal',   eyebrow: 'COMPARE.',          headline: 'Side by side.' },
+    'colorpairs':    { scheme: 'scheme-bright-teal',   eyebrow: 'COLOR PAIRS.',      headline: 'What goes with what.' },
+    'rotation':      { scheme: 'scheme-bright-teal',   eyebrow: 'ROTATION.',         headline: 'Worn, not just owned.' },
+
+    'insights':      { scheme: 'scheme-mediterranean', eyebrow: 'INSIGHTS.',         headline: 'What your closet says.' },
+    'girlmath':      { scheme: 'scheme-mediterranean', eyebrow: 'GIRL MATH.',        headline: 'Track every dollar.' },
+    'notes':         { scheme: 'scheme-mediterranean', eyebrow: 'MY NOTES.',         headline: 'Quiet observations.' },
+
+    'receipts':      { scheme: 'scheme-terracotta',    eyebrow: 'RECEIPTS.',         headline: 'The paper trail.' },
+    'cart-import':   { scheme: 'scheme-terracotta',    eyebrow: 'CART IMPORTER.',    headline: 'Pull from where you shop.' },
+    'email-import':  { scheme: 'scheme-terracotta',    eyebrow: 'EMAIL IMPORTER.',   headline: 'Receipts straight from your inbox.' },
+    'paste-receipt': { scheme: 'scheme-terracotta',    eyebrow: 'PASTE A RECEIPT.',  headline: 'Type it in, save it forever.' },
+
+    'returned':      { scheme: 'scheme-charcoal',      eyebrow: 'THE RECORD.',       headline: 'What’s already happened.' }
+  };
+
+  var DEFAULT = PAGES.closet;
+  var SCHEME_CLASSES = [
+    'scheme-cream', 'scheme-blush', 'scheme-sage', 'scheme-soft-sea',
+    'scheme-bright-teal', 'scheme-mediterranean', 'scheme-terracotta', 'scheme-charcoal'
+  ];
+
+  function getRouteFromHash() {
+    var hash = location.hash || '';
+    var m = hash.match(/^#\/([^?\/]+)/);
+    return m ? m[1] : 'closet';
+  }
+
+  function applyForRoute() {
+    var route = getRouteFromHash();
+    var page = PAGES[route] || DEFAULT;
+
+    // Swap scheme class on <body>. Removes any previous scheme-*.
+    var body = document.body;
+    SCHEME_CLASSES.forEach(function (c) { body.classList.remove(c); });
+    body.classList.add(page.scheme);
+
+    // Update hero text
+    var eb = document.getElementById('pageHeroEyebrow');
+    var hl = document.getElementById('pageHeroHeadline');
+    if (eb) eb.textContent = page.eyebrow;
+    if (hl) hl.textContent = page.headline;
+  }
+
+  function init() {
+    applyForRoute();
+    window.addEventListener('hashchange', applyForRoute);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 
 
