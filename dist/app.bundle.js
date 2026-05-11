@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-11 18:48:09 */
+/* TMF Closet bundle — built 2026-05-11 19:48:31 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -10356,25 +10356,46 @@ function rotationDayHtml(day) {
         if (typeof openItemDetail === 'function') openItemDetail(id);
       });
     });
+    // Optimistic: fade the row instantly, fire API in background.
+    // Only re-render the whole page if API fails.
+    function fadeAndRemove(row) {
+      if (!row) return;
+      row.style.transition = 'opacity 0.18s ease, height 0.22s ease';
+      row.style.pointerEvents = 'none';
+      row.style.opacity = '0';
+      setTimeout(() => { try { row.remove(); } catch (_) {} }, 220);
+    }
     main.querySelectorAll('[data-rd-mark]').forEach(b => {
       b.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = Number(b.dataset.rdMark);
         const status = b.dataset.rdStatus;
-        await dbUpdateItem(id, { status, returnDecided: true });
+        const row = b.closest('.rd-row');
+        fadeAndRemove(row);
         showToast('Marked as returned');
-        render(main);
-        refreshSidebarBadge();
+        try {
+          await dbUpdateItem(id, { status, returnDecided: true });
+          refreshSidebarBadge();
+        } catch (err) {
+          showToast('Update failed — refreshing');
+          render(main);
+        }
       });
     });
     main.querySelectorAll('[data-rd-keep]').forEach(b => {
       b.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = Number(b.dataset.rdKeep);
-        await dbUpdateItem(id, { returnDecided: true });
+        const row = b.closest('.rd-row');
+        fadeAndRemove(row);
         showToast('Kept — removed from Returns Due');
-        render(main);
-        refreshSidebarBadge();
+        try {
+          await dbUpdateItem(id, { returnDecided: true });
+          refreshSidebarBadge();
+        } catch (err) {
+          showToast('Update failed — refreshing');
+          render(main);
+        }
       });
     });
   }

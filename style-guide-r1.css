@@ -815,3 +815,37 @@ select {
     font-size: 22px;
   }
 }
+
+/* Returns Due — keep the row from overflowing on iPhone. Below 480px,
+   stack the action buttons below the item info instead of squeezing them
+   off the right edge of the screen. */
+@media (max-width: 480px) {
+  .rd-row {
+    grid-template-columns: 56px 1fr;
+    grid-template-areas:
+      "thumb info"
+      "thumb actions";
+    row-gap: 8px;
+    padding: 10px 12px;
+  }
+  .rd-thumb {
+    grid-area: thumb;
+    width: 56px; height: 56px;
+    align-self: start;
+  }
+  .rd-info {
+    grid-area: info;
+    min-width: 0;
+  }
+  .rd-info .rd-name, .rd-info .rd-meta, .rd-info .rd-deadline {
+    overflow-wrap: anywhere;
+  }
+  .rd-actions {
+    grid-area: actions;
+    justify-content: flex-end;
+  }
+  .rd-actions .btn {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}
