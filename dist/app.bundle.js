@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-14 16:54:51 */
+/* TMF Closet bundle — built 2026-05-14 22:45:00 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -925,11 +925,9 @@ function _rowToItem(row) {
     photo:               row.cover_photo_path ? API_PHOTO_BASE + row.cover_photo_path : null,
     thumb:               row.thumb_path       ? API_PHOTO_BASE + row.thumb_path       : null,
     photos:              (() => {
-      if (!row.extra_photos) return [];
-      try {
-        const paths = JSON.parse(row.extra_photos);
-        return Array.isArray(paths) ? paths.map(p => API_PHOTO_BASE + p) : [];
-      } catch (_) { return []; }
+      // Server already parses extra_photos to an array — don't JSON.parse again.
+      const paths = Array.isArray(row.extra_photos) ? row.extra_photos : [];
+      return paths.filter(Boolean).map(p => API_PHOTO_BASE + p);
     })(),
     returnDecided:       !!row.return_decided,
     createdAt:           row.created_at ? new Date(row.created_at).getTime() : null,
@@ -1307,7 +1305,12 @@ async function dbSetPreference(key, value) {
 }
 
 // ── Legacy stubs (no-op in API mode) ─────────────────────────────────────
-// migrateGuestT
+// migrateGuestToCurrentUser only applies to IndexedDB; with the API every
+// user already has their own server-side DB partition.
+async function migrateGuestToCurrentUser() {
+  return { items: 0, outfits: 0, skipped: 'noop_api_mode' };
+}
+
 
 /* ===== js/closet-r10.js ===== */
 // closet.js — closet view, upload, item detail/edit
