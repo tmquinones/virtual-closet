@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-11 20:22:21 */
+/* TMF Closet bundle — built 2026-05-14 16:36:54 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -924,7 +924,13 @@ function _rowToItem(row) {
     // photo / thumb are URL strings; blobToUrl() handles strings natively
     photo:               row.cover_photo_path ? API_PHOTO_BASE + row.cover_photo_path : null,
     thumb:               row.thumb_path       ? API_PHOTO_BASE + row.thumb_path       : null,
-    photos:              [],  // extra photos not yet migrated; stub for compatibility
+    photos:              (() => {
+      if (!row.extra_photos) return [];
+      try {
+        const paths = JSON.parse(row.extra_photos);
+        return Array.isArray(paths) ? paths.map(p => API_PHOTO_BASE + p) : [];
+      } catch (_) { return []; }
+    })(),
     createdAt:           row.created_at ? new Date(row.created_at).getTime() : null,
     updatedAt:           row.updated_at ? new Date(row.updated_at).getTime() : null,
   };
@@ -961,12 +967,38 @@ async function _itemToBody(item) {
     listing_description:  item.listingDescription,
     notes:                item.notes,
   };
-  // Handle photo blobs
+  // Handle cover photo
   if (item.photo instanceof Blob || (item.photo && typeof item.photo !== 'string')) {
     b.photo_data = await _blobToDataUrl(item.photo);
+  } else if (item.photo === null) {
+    // Explicit removal — tell server to clear cover
+    b.cover_photo_path = null;
   }
+  // Handle thumbnail
   if (item.thumb instanceof Blob || (item.thumb && typeof item.thumb !== 'string')) {
     b.thumb_data = await _blobToDataUrl(item.thumb);
+  } else if (item.thumb === null) {
+    b.thumb_path = null;
+  }
+  // Handle extra photos array (multiple angles)
+  // Each element is either a new Blob, an existing API URL string (keep it),
+  // or a data-URL string (pre-encoded). We always send this field when present
+  // so the server can reconcile adds and removals.
+  if (item.photos !== undefined) {
+    const photosPayload = [];
+    for (const p of (item.photos || [])) {
+      if (!p) continue;
+      if (p instanceof Blob) {
+        photosPayload.push(await _blobToDataUrl(p));
+      } else if (typeof p === 'string' && p.startsWith('data:')) {
+        photosPayload.push(p);                       // already base64
+      } else if (typeof p === 'string') {
+        // Existing server URL — strip base so server gets the relative path
+        const rel = p.startsWith(API_PHOTO_BASE) ? p.slice(API_PHOTO_BASE.length) : p;
+        photosPayload.push(rel);
+      }
+    }
+    b.extra_photos_data = photosPayload;
   }
   return b;
 }
@@ -2242,6 +2274,7 @@ async function openItemEdit(id) {
     closeModal();
     showToast('Changes saved');
     if (location.hash.startsWith('#/closet')) renderClosetView(document.getElementById('main'));
+    else if (location.hash.startsWith('#/returned') && typeof renderReturnedView === 'function') renderReturnedView(document.getElementById('main'));
   });
 }
 
