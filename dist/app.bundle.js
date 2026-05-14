@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-14 16:36:54 */
+/* TMF Closet bundle — built 2026-05-14 16:54:51 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -931,6 +931,7 @@ function _rowToItem(row) {
         return Array.isArray(paths) ? paths.map(p => API_PHOTO_BASE + p) : [];
       } catch (_) { return []; }
     })(),
+    returnDecided:       !!row.return_decided,
     createdAt:           row.created_at ? new Date(row.created_at).getTime() : null,
     updatedAt:           row.updated_at ? new Date(row.updated_at).getTime() : null,
   };
@@ -967,6 +968,9 @@ async function _itemToBody(item) {
     listing_description:  item.listingDescription,
     notes:                item.notes,
   };
+  // returnDecided — only include when explicitly set so routine saves don't reset it
+  if (item.returnDecided !== undefined) b.return_decided = item.returnDecided ? 1 : 0;
+
   // Handle cover photo
   if (item.photo instanceof Blob || (item.photo && typeof item.photo !== 'string')) {
     b.photo_data = await _blobToDataUrl(item.photo);
@@ -1303,12 +1307,7 @@ async function dbSetPreference(key, value) {
 }
 
 // ── Legacy stubs (no-op in API mode) ─────────────────────────────────────
-// migrateGuestToCurrentUser only applies to IndexedDB; with the API every
-// user already has their own server-side DB partition.
-async function migrateGuestToCurrentUser() {
-  return { items: 0, outfits: 0, skipped: 'noop_api_mode' };
-}
-
+// migrateGuestT
 
 /* ===== js/closet-r10.js ===== */
 // closet.js — closet view, upload, item detail/edit
@@ -2491,11 +2490,15 @@ function refreshAddPhotoStrip() {
       inp.type = 'file';
       inp.accept = 'image/*';
       inp.multiple = true;
+      // Must be in the DOM before .click() or iOS Safari won't open the picker
+      inp.style.cssText = 'position:fixed;top:-999px;left:-999px;opacity:0;';
+      document.body.appendChild(inp);
       inp.addEventListener('change', e => {
         const files = [...e.target.files].filter(f => f.type.startsWith('image/'));
         for (const f of files) {
           if (!appendPhotoToPending(f)) break;
         }
+        inp.remove();
       });
       inp.click();
     });
@@ -3079,6 +3082,7 @@ async function reviewNext() {
     setTimeout(reviewNext, 80);
   });
 }
+
 
 
 
