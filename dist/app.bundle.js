@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-14 22:45:00 */
+/* TMF Closet bundle — built 2026-05-15 00:33:16 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -3648,8 +3648,10 @@ async function reviewNext() {
   // background pixels, return the average of the rest.
   async function dominantColor(blob) {
     return new Promise((resolve) => {
-      const url = URL.createObjectURL(blob);
+      const isBlob = blob instanceof Blob;
+      const url = isBlob ? URL.createObjectURL(blob) : String(blob);
       const img = new Image();
+      if (!isBlob) img.crossOrigin = 'anonymous'; // needed for canvas when loading remote URL
       img.onload = () => {
         const max = 80; // small for speed
         const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
@@ -5646,18 +5648,14 @@ window.addEventListener('DOMContentLoaded', function () {
   const QUALITY_THRESHOLD = 800;  // max dimension (px) — anything under is "low res"
   const VERY_LOW = 500;           // anything under this is "very low"
 
-  function naturalDimensions(blob) {
+  function naturalDimensions(blobOrUrl) {
     return new Promise((resolve) => {
-      const url = URL.createObjectURL(blob);
+      const isBlob = blobOrUrl instanceof Blob;
+      const url = isBlob ? URL.createObjectURL(blobOrUrl) : String(blobOrUrl);
       const img = new Image();
-      img.onload = () => {
-        resolve({ w: img.naturalWidth, h: img.naturalHeight });
-        URL.revokeObjectURL(url);
-      };
-      img.onerror = () => {
-        resolve({ w: 0, h: 0 });
-        URL.revokeObjectURL(url);
-      };
+      const cleanup = () => { if (isBlob) URL.revokeObjectURL(url); };
+      img.onload = () => { resolve({ w: img.naturalWidth, h: img.naturalHeight }); cleanup(); };
+      img.onerror = () => { resolve({ w: 0, h: 0 }); cleanup(); };
       img.src = url;
     });
   }
@@ -5806,12 +5804,14 @@ window.addEventListener('DOMContentLoaded', function () {
   const QUALITY_THRESHOLD = 800;
   const VERY_LOW = 500;
 
-  function naturalDimensions(blob) {
+  function naturalDimensions(blobOrUrl) {
     return new Promise((resolve) => {
-      const url = URL.createObjectURL(blob);
+      const isBlob = blobOrUrl instanceof Blob;
+      const url = isBlob ? URL.createObjectURL(blobOrUrl) : String(blobOrUrl);
       const img = new Image();
-      img.onload = () => { resolve({ w: img.naturalWidth, h: img.naturalHeight }); URL.revokeObjectURL(url); };
-      img.onerror = () => { resolve({ w: 0, h: 0 }); URL.revokeObjectURL(url); };
+      const cleanup = () => { if (isBlob) URL.revokeObjectURL(url); };
+      img.onload = () => { resolve({ w: img.naturalWidth, h: img.naturalHeight }); cleanup(); };
+      img.onerror = () => { resolve({ w: 0, h: 0 }); cleanup(); };
       img.src = url;
     });
   }
