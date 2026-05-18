@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-15 00:33:16 */
+/* TMF Closet bundle — built 2026-05-18 01:59:52 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -930,6 +930,7 @@ function _rowToItem(row) {
       return paths.filter(Boolean).map(p => API_PHOTO_BASE + p);
     })(),
     returnDecided:       !!row.return_decided,
+    wearLog:             Array.isArray(row.wear_log) ? row.wear_log : [],
     createdAt:           row.created_at ? new Date(row.created_at).getTime() : null,
     updatedAt:           row.updated_at ? new Date(row.updated_at).getTime() : null,
   };
@@ -965,6 +966,7 @@ async function _itemToBody(item) {
     asking_price:         item.askingPrice,
     listing_description:  item.listingDescription,
     notes:                item.notes,
+    wear_log:             item.wearLog !== undefined ? item.wearLog : undefined,
   };
   // returnDecided — only include when explicitly set so routine saves don't reset it
   if (item.returnDecided !== undefined) b.return_decided = item.returnDecided ? 1 : 0;
@@ -3094,38 +3096,58 @@ async function reviewNext() {
 
 /* ===== js/wear-r1.js ===== */
 // wear-r1.js — Wear tracking helpers + UI integration
-// Adds a wearLog: number[] array of millisecond timestamps to each item.
-// Hooks into the item detail modal to add a "I wore this today" button
-// and a wear stats block, and decorates closet cards with a wear badge.
+// Stores wearLog as an array of ISO date strings ("YYYY-MM-DD").
+// Hooks into the item detail modal to add a "Log a wear" button
+// (with date picker for back-dating) and a wear stats block,
+// and decorates closet cards with a wear badge.
 
 (function() {
+  function _todayISO() {
+    const d = new Date();
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+  }
+
   // ============== Helpers (exposed as globals) ==============
   window.wearCount = function(item) { return (item && item.wearLog || []).length; };
+
+  // Returns the most-recent ISO date string, or null.
   window.lastWornAt = function(item) {
     const log = (item && item.wearLog) || [];
-    return log.length ? Math.max(...log) : null;
+    if (!log.length) return null;
+    return log.slice().sort().pop(); // ISO strings sort lexicographically
   };
+
   window.daysSinceLastWear = function(item) {
     const last = window.lastWornAt(item);
     if (!last) return null;
-    return Math.floor((Date.now() - last) / 86400000);
+    const lastMs = new Date(last + 'T00:00').getTime();
+    return Math.floor((Date.now() - lastMs) / 86400000);
   };
-  window.recordWear = async function(itemId, timestamp) {
+
+  // dateStr: ISO string "YYYY-MM-DD" (defaults to today)
+  window.recordWear = async function(itemId, dateStr) {
     if (typeof dbGetItem !== 'function' || typeof dbUpdateItem !== 'function') return;
     const item = await dbGetItem(itemId);
     if (!item) return;
-    const log = ((item.wearLog) || []).slice();
-    log.push(timestamp || Date.now());
+    const date = dateStr || _todayISO();
+    const log = Array.isArray(item.wearLog) ? item.wearLog.slice() : [];
+    // Allow multiple wears on the same day — duplicates are valid
+    log.push(date);
     await dbUpdateItem(itemId, { wearLog: log });
     if (typeof showToast === 'function') showToast('Logged a wear · total ' + log.length);
+    return log;
   };
+
   window.removeLastWear = async function(itemId) {
     const item = await dbGetItem(itemId);
     if (!item || !(item.wearLog || []).length) return;
-    const log = item.wearLog.slice();
-    log.pop();
+    const log = item.wearLog.slice().sort(); // chronological
+    log.pop(); // remove most recent
     await dbUpdateItem(itemId, { wearLog: log });
     if (typeof showToast === 'function') showToast('Removed last wear');
+    return log;
   };
 
   function fmtRelativeDays(d) {
@@ -3138,8 +3160,7 @@ async function reviewNext() {
   }
   window.fmtRelativeDays = fmtRelativeDays;
 
-  // ============== Inject "Wore today" UI into item detail modal ==============
-  // Watches the modal for changes; when an item detail renders, append a wear card.
+  // ============== Inject wear UI into item detail modal ==============
   function enhanceItemDetail() {
     const modalContent = document.getElementById('modalContent');
     if (!modalContent) return;
@@ -3148,14 +3169,9 @@ async function reviewNext() {
     if (modalContent.querySelector('.wear-card')) return; // already added
     const editBtn = modalContent.querySelector('#editItemBtn');
     if (!editBtn) return;
-    // Pull the item id from the wired delete button (or fallback)
     const deleteBtn = modalContent.querySelector('#deleteItemBtn');
     if (!deleteBtn) return;
 
-    // Find the item id by hitting the data-item-id of the most recently clicked card
-    // OR by re-reading the DOM. We'll pull it from the actions container's parent context:
-    // The simplest path is to attach the id at button click time; we'll do that via delegation.
-    // Here we assume the modal is open for whichever item is in window._wearCurrentItemId
     const id = window._wearCurrentItemId;
     if (!id) return;
 
@@ -3164,58 +3180,87 @@ async function reviewNext() {
       const count = wearCount(item);
       const last = lastWornAt(item);
       const sinceTxt = last ? fmtRelativeDays(daysSinceLastWear(item)) : 'never logged';
+      const today = _todayISO();
+
       const wearCard = document.createElement('div');
       wearCard.className = 'wear-card';
       wearCard.innerHTML = `
         <div class="wear-card-stats">
           <div class="wear-stat">
             <div class="wear-stat-label">Times worn</div>
-            <div class="wear-stat-value">${count}</div>
+            <div class="wear-stat-value" id="wearCountVal">${count}</div>
           </div>
           <div class="wear-stat">
             <div class="wear-stat-label">Last worn</div>
-            <div class="wear-stat-value">${sinceTxt}</div>
+            <div class="wear-stat-value" id="wearLastVal">${sinceTxt}</div>
           </div>
         </div>
         <div class="wear-card-actions">
-          <button class="btn btn-primary" id="wearTodayBtn">+ I wore this today</button>
+          <button class="btn btn-primary" id="wearLogBtn">+ Log a wear</button>
           ${count > 0 ? '<button class="btn btn-ghost btn-sm" id="wearUndoBtn">Undo last</button>' : ''}
         </div>
+        <div class="wear-date-row" id="wearDateRow" style="display:none; margin-top:10px; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input type="date" class="input" id="wearDateInput" value="${today}" max="${today}" style="flex:1; min-width:140px;" />
+          <button class="btn btn-primary btn-sm" id="wearConfirmBtn">Log it</button>
+          <button class="btn btn-ghost btn-sm" id="wearCancelBtn">Cancel</button>
+        </div>
       `;
-      // Insert into the info column (after the action buttons)
+
       const actions = modalContent.querySelector('.item-detail-actions');
       if (actions) actions.parentElement.insertBefore(wearCard, actions.nextSibling);
       else modalContent.querySelector('.item-detail-info')?.appendChild(wearCard);
 
-      document.getElementById('wearTodayBtn')?.addEventListener('click', async () => {
-        await recordWear(id);
-        // Re-fetch and refresh just the wear card
+      // Wire up "Log a wear" — shows date picker
+      document.getElementById('wearLogBtn').addEventListener('click', () => {
+        const row = document.getElementById('wearDateRow');
+        const btn = document.getElementById('wearLogBtn');
+        row.style.display = 'flex';
+        btn.style.display = 'none';
+        document.getElementById('wearDateInput').focus();
+      });
+
+      // Cancel hides date picker
+      document.getElementById('wearCancelBtn').addEventListener('click', () => {
+        document.getElementById('wearDateRow').style.display = 'none';
+        document.getElementById('wearLogBtn').style.display = '';
+      });
+
+      // Confirm logs the wear
+      document.getElementById('wearConfirmBtn').addEventListener('click', async () => {
+        const dateVal = document.getElementById('wearDateInput').value;
+        if (!dateVal) { if (typeof showToast === 'function') showToast('Pick a date first'); return; }
+        const newLog = await recordWear(id, dateVal);
         const fresh = await dbGetItem(id);
-        const c = wearCount(fresh);
-        const l = lastWornAt(fresh);
-        wearCard.querySelector('.wear-stat-value').textContent = c;
-        const stats = wearCard.querySelectorAll('.wear-stat-value');
-        if (stats[1]) stats[1].textContent = l ? fmtRelativeDays(daysSinceLastWear(fresh)) : 'never logged';
-        // If first wear, add the undo button
-        if (c === 1 && !document.getElementById('wearUndoBtn')) {
+        _refreshWearStats(wearCard, fresh);
+        document.getElementById('wearDateRow').style.display = 'none';
+        document.getElementById('wearLogBtn').style.display = '';
+        // Add undo button if first wear
+        if (wearCount(fresh) === 1 && !document.getElementById('wearUndoBtn')) {
           const actionsRow = wearCard.querySelector('.wear-card-actions');
           actionsRow.insertAdjacentHTML('beforeend', '<button class="btn btn-ghost btn-sm" id="wearUndoBtn">Undo last</button>');
           document.getElementById('wearUndoBtn').addEventListener('click', wearUndoHandler);
         }
       });
+
       document.getElementById('wearUndoBtn')?.addEventListener('click', wearUndoHandler);
 
       async function wearUndoHandler() {
         await removeLastWear(id);
         const fresh = await dbGetItem(id);
-        const c = wearCount(fresh);
-        const l = lastWornAt(fresh);
-        wearCard.querySelector('.wear-stat-value').textContent = c;
-        const stats = wearCard.querySelectorAll('.wear-stat-value');
-        if (stats[1]) stats[1].textContent = l ? fmtRelativeDays(daysSinceLastWear(fresh)) : 'never logged';
-        if (c === 0) document.getElementById('wearUndoBtn')?.remove();
+        _refreshWearStats(wearCard, fresh);
+        if (wearCount(fresh) === 0) document.getElementById('wearUndoBtn')?.remove();
       }
     });
+  }
+
+  function _refreshWearStats(wearCard, item) {
+    const countEl = wearCard.querySelector('#wearCountVal');
+    const lastEl  = wearCard.querySelector('#wearLastVal');
+    if (countEl) countEl.textContent = wearCount(item);
+    if (lastEl) {
+      const last = lastWornAt(item);
+      lastEl.textContent = last ? fmtRelativeDays(daysSinceLastWear(item)) : 'never logged';
+    }
   }
 
   // Hook into card clicks to remember which item is currently being viewed
@@ -3230,7 +3275,6 @@ async function reviewNext() {
   const modalContent = document.getElementById('modalContent');
   if (modalContent) {
     new MutationObserver(() => {
-      // Defer slightly so DOM is fully rendered
       setTimeout(enhanceItemDetail, 30);
     }).observe(modalContent, { childList: true });
   }
@@ -3257,7 +3301,6 @@ async function reviewNext() {
       } catch (_) {}
     }));
   }
-  // Run periodically (cheap) so cards from any view get decorated
   setInterval(decorateCards, 600);
 })();
 
@@ -9698,6 +9741,17 @@ function rotationDayHtml(day) {
     const date = document.getElementById('d_date').value;
     const caption = document.getElementById('d_caption').value.trim();
     if (!date) { alert('Pick a date for this entry.'); return; }
+
+    // Determine which item IDs were previously tagged (for edit diffing)
+    let previousItemIds = new Set();
+    if (editingId) {
+      try {
+        const all = await dbGetAllDaily();
+        const prev = all.find(x => x.id === editingId);
+        if (prev) previousItemIds = new Set(prev.itemIds || []);
+      } catch (_) {}
+    }
+
     const record = {
       date,
       caption,
@@ -9712,9 +9766,14 @@ function rotationDayHtml(day) {
         await dbAddDaily(record);
         showToast('Day logged');
       }
-      // Also append a wear entry to each tagged item's wearLog so other
-      // views (Insights, slideshow, etc.) reflect this naturally.
-      for (const id of selectedItemIds) {
+
+      // Sync wearLog on each affected item.
+      // Added items: push this date into their wearLog (if not already there).
+      // Removed items (edit only): remove one occurrence of this date.
+      const addedIds   = [...selectedItemIds].filter(id => !previousItemIds.has(id));
+      const removedIds = [...previousItemIds].filter(id => !selectedItemIds.has(id));
+
+      for (const id of addedIds) {
         try {
           const it = await dbGetItem(id);
           if (!it) continue;
@@ -9723,6 +9782,17 @@ function rotationDayHtml(day) {
           await dbUpdateItem(id, { wearLog });
         } catch (_) {}
       }
+      for (const id of removedIds) {
+        try {
+          const it = await dbGetItem(id);
+          if (!it) continue;
+          const wearLog = Array.isArray(it.wearLog) ? it.wearLog.slice() : [];
+          const idx = wearLog.indexOf(date);
+          if (idx !== -1) wearLog.splice(idx, 1);
+          await dbUpdateItem(id, { wearLog });
+        } catch (_) {}
+      }
+
       render(document.getElementById('main'));
     } catch (e) {
       alert('Save failed: ' + (e?.message || e));
@@ -11030,7 +11100,7 @@ function rotationDayHtml(day) {
 // reading-pane container selectors, then fall back to the whole document.
 
 (function() {
-  var CLOSET_URL = 'https://tmquinones.github.io/virtual-closet/';
+  var CLOSET_URL = 'https://tmfcloset.com/';
 
   // Bookmarklet body — written as a string for the javascript: URL. Same
   // hand-rolled escaping style as cartimport-r1.js.
