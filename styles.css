@@ -506,7 +506,7 @@ h3 { font-size: 16px; }
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: 28px 32px;
-  min-width: 360px;
+  min-width: min(360px, calc(100vw - 48px));
   max-width: 480px;
 }
 .progress-title { font-weight: 600; font-size: 16px; margin-bottom: 14px; }
@@ -1381,4 +1381,14 @@ ap: 4px;
   align-items: center;
   justify-content: center;
   font-size: 22px;
-  color:
+  color: var(--text-faint);
+}
+.suggest-shop-link {
+  font-size: 11.5px;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  display: inline-block;
+  margin-top: 2px;
+}
+.suggest-shop-link:hover { color: var(--accent); }

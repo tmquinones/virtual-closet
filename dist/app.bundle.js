@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-18 01:59:52 */
+/* TMF Closet bundle — built 2026-05-18 03:14:43 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -7470,7 +7470,7 @@ window.addEventListener('DOMContentLoaded', function () {
       </div>
 
       <div class="card" style="padding: 18px; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto;">
-        <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 14px;">
+        <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;">
           <div class="field">
             <label class="field-label" for="trip_name">Trip name</label>
             <input class="input" id="trip_name" type="text" placeholder="e.g. Italy in May" />
@@ -7604,7 +7604,7 @@ window.addEventListener('DOMContentLoaded', function () {
       <h2 class="gm-h2" style="text-align: center;">${escapeHtml(name || 'Your trip')}${dest ? ' · ' + escapeHtml(dest) : ''}</h2>
       <div class="muted" style="text-align: center; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 24px;">${days} day${days === 1 ? '' : 's'} · ${occasions.length} ${occasions.length === 1 ? 'activity' : 'activities'} · ${packingList.length} pieces${missingNeeds.size > 0 ? ' · ' + missingNeeds.size + ' gap' + (missingNeeds.size === 1 ? '' : 's') : ''}</div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; align-items: start;">
         <div>
           <h3 style="font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 600; margin-bottom: 12px;">Packing list</h3>
           <p class="muted" style="font-size: 11.5px; margin-bottom: 12px;">${packingList.length} unique piece${packingList.length === 1 ? '' : 's'} cover all your outfits.</p>
@@ -9596,7 +9596,7 @@ function rotationDayHtml(day) {
 
       <div class="card" style="padding: 16px 18px; margin-bottom: 16px;">
         <div class="row" style="gap: 16px; align-items: flex-start; flex-wrap: wrap;">
-          <div style="flex: 1; min-width: 220px;">
+          <div style="flex: 1; min-width: 0;">
             <div class="field">
               <label class="field-label" for="d_date">Date</label>
               <input class="input" type="date" id="d_date" value="${escapeHtml(date)}" />
@@ -9606,7 +9606,7 @@ function rotationDayHtml(day) {
               <input class="input" type="text" id="d_caption" placeholder="e.g. Brunch with Mom" value="${escapeHtml(caption)}" />
             </div>
           </div>
-          <div style="flex: 1; min-width: 220px;">
+          <div style="flex: 1; min-width: 0;">
             <div class="daily-photo-pick" id="dailyPhotoPick" style="background-image: url('${pendingPhotoUrl || ''}');">
               ${pendingPhotoUrl ? '' : '<span>Click to upload a photo</span>'}
               <input type="file" id="d_photo" accept="image/*" hidden />
