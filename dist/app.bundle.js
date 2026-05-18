@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-18 04:37:22 */
+/* TMF Closet bundle — built 2026-05-18 04:48:11 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -6348,7 +6348,9 @@ window.addEventListener('DOMContentLoaded', function () {
   // ============== Inference helpers ==============
   // Map common subtype keywords (case-insensitive substrings) to garmentType + subtype
   const SUBTYPE_KEYWORDS = [
-    [/\bhalf[- ]?zip\b/i,        'tops',           'Sweater'],
+    [/\bfull[- ]?zip\b|\bzip[- ]?(?:up|through|front)\b/i, 'tops', 'Zip-up'],
+    [/\bhalf[- ]?zip\b/i,        'tops',           'Half-zip'],
+    [/\bcami\b|\bcamisole\b/i,  'tops',           'Tank top'],
     [/\bhoodie\b/i,              'tops',           'Hoodie'],
     [/\bcardigan\b/i,            'tops',           'Cardigan'],
     [/\bsweater\b|\bjumper\b/i, 'tops',           'Sweater'],
@@ -6472,8 +6474,13 @@ window.addEventListener('DOMContentLoaded', function () {
     const inferredWishSub = wishSub || _inferSubtype((wishItem.name || '') + ' ' + (wishItem.notes || '')).toLowerCase();
     const passesSubtype = (cand) => {
       if (!inferredWishSub) return true;
-      const candSub = (cand.subtype || '').trim().toLowerCase();
-      // If candidate has no subtype, don't block it — scoring will handle ranking
+      let candSub = (cand.subtype || '').trim().toLowerCase();
+      // If candidate has no explicit subtype, infer from its name so shorts
+      // don't slip through as pants matches, etc.
+      if (!candSub) {
+        candSub = _inferSubtype((cand.name || '') + ' ' + (cand.notes || '')).toLowerCase();
+      }
+      // If we truly can't infer anything for the candidate, let score decide
       if (!candSub) return true;
       return candSub === inferredWishSub;
     };
