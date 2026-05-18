@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-18 03:51:24 */
+/* TMF Closet bundle — built 2026-05-18 04:05:06 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -10244,11 +10244,19 @@ function rotationDayHtml(day) {
     return String(s || 'receipt').replace(/[^a-z0-9-_]+/gi, '_').slice(0, 60);
   }
 
+  function hasReceiptIndicator(i) {
+    if (i.receipt) return true;
+    const tags = (i.tags || []).map(t => t.toLowerCase());
+    if (tags.some(t => /receipt|invoice/.test(t))) return true;
+    if (i.notes && /receipt|invoice/i.test(i.notes)) return true;
+    return false;
+  }
+
   async function render(main) {
     main = main || document.getElementById('main');
     if (!main) return;
     const items = await dbGetAllItems();
-    const withReceipt = items.filter(i => i.receipt);
+    const withReceipt = items.filter(hasReceiptIndicator);
     withReceipt.sort((a, b) => String(b.purchaseDate || '').localeCompare(String(a.purchaseDate || '')));
 
     const totalSpent = withReceipt.reduce((s, i) => s + (Number(i.purchasePrice) || 0), 0);
@@ -10327,6 +10335,7 @@ function rotationDayHtml(day) {
     const meta = [it.brand, it.color].filter(Boolean).join(' · ');
     const price = it.purchasePrice ? '$' + Number(it.purchasePrice).toFixed(2) : '—';
     const date = it.purchaseDate || '';
+    const hasFile = !!r;
     return `
       <div class="receipt-row">
         <div class="receipt-thumb" style="background-image:url('${url}')"></div>
@@ -10336,11 +10345,15 @@ function rotationDayHtml(day) {
         </div>
         <div class="receipt-stats">
           <div class="receipt-price">${price}</div>
-          <div class="receipt-fileinfo muted">${isPdf ? 'PDF' : 'Image'}${r?.size ? ' · ' + fmtBytes(r.size) : ''}</div>
+          <div class="receipt-fileinfo muted">${hasFile ? (isPdf ? 'PDF' : 'Image') + (r?.size ? ' · ' + fmtBytes(r.size) : '') : '<em>tagged — no file attached</em>'}</div>
         </div>
         <div class="receipt-actions">
-          <button class="btn btn-sm" data-view-receipt="${it.id}">View</button>
-          <button class="btn btn-sm" data-download-receipt="${it.id}">Download</button>
+          ${hasFile ? `
+            <button class="btn btn-sm" data-view-receipt="${it.id}">View</button>
+            <button class="btn btn-sm" data-download-receipt="${it.id}">Download</button>
+          ` : `
+            <button class="btn btn-sm" data-open-item="${it.id}">Open item</button>
+          `}
         </div>
       </div>
     `;
