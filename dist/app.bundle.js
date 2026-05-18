@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-18 04:54:12 */
+/* TMF Closet bundle — built 2026-05-18 05:01:58 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -6430,10 +6430,48 @@ window.addEventListener('DOMContentLoaded', function () {
     return null;
   }
 
+  // Subtype family groupings — items in the same family are the same "type"
+  // for similarity purposes regardless of exact label stored in the DB.
+  // Jacket, Zip-up, Blazer etc. are all "zip-jacket"; Pants and Jeans are "pants" …
+  const SUBTYPE_FAMILIES = {
+    'T-shirt':'light-top','Tank top':'light-top','Cami':'light-top',
+    'Blouse':'blouse','Shirt':'blouse','Long sleeve':'blouse',
+    'Polo':'polo',
+    'Sweater':'knitwear','Half-zip':'knitwear','Cardigan':'knitwear',
+    'Hoodie':'hoodie',
+    'Zip-up':'zip-jacket','Jacket':'zip-jacket','Blazer':'zip-jacket',
+    'Vest':'zip-jacket','Coat':'zip-jacket',
+    'Pants':'pants','Jeans':'pants',
+    'Leggings':'leggings',
+    'Shorts':'shorts',
+    'Skirt':'skirt',
+    'Dress':'dress','Jumpsuit':'dress','Romper':'dress',
+    'Sneakers':'athletic-shoe','Athletic':'athletic-shoe',
+    'Flats':'flat-shoe',
+    'Sandals':'sandal','Slippers':'sandal','Slides':'sandal',
+    'Heels':'heel',
+    'Boots':'boot',
+    'Earrings':'earring','Necklace':'necklace','Bracelet':'bracelet',
+    'Hat':'hat','Bag':'bag','Belt':'belt',
+    'Sunglasses':'sunglasses','Watch':'watch','Scarf':'scarf','Socks':'socks',
+    'Sports bra':'intimate','Bra':'intimate','Bikini top':'swimwear',
+    'Bikini bottom':'swimwear','One-piece swimsuit':'swimwear','Underwear':'intimate',
+  };
+  function _subtypeFamily(sub) { return sub ? (SUBTYPE_FAMILIES[sub] || null) : null; }
+
   function _similarityScore(wish, candidate) {
     let s = 0;
     if (wish.garmentType && candidate.garmentType === wish.garmentType) s += 3;
-    if (wish.subtype && candidate.subtype === wish.subtype) s += 5;
+    // Subtype matching — exact: +6 · same family (Jacket≈Zip-up, Pants≈Jeans …): +5
+    if (wish.subtype && candidate.subtype) {
+      if (candidate.subtype === wish.subtype) {
+        s += 6;
+      } else {
+        const wf = _subtypeFamily(wish.subtype);
+        const cf = _subtypeFamily(candidate.subtype);
+        if (wf && cf && wf === cf) s += 5;
+      }
+    }
     if (wish.brand && candidate.brand && candidate.brand.toLowerCase() === wish.brand.toLowerCase()) s += 2;
     if (wish.size && candidate.size && candidate.size === wish.size) s += 1;
 
@@ -6477,28 +6515,33 @@ window.addEventListener('DOMContentLoaded', function () {
     const wishItems = await dbGetAllWishlistItems();
 
     // Build effective wish — use inferred subtype if explicit one not set.
-    // This ensures _similarityScore awards the subtype bonus even when the
-    // field was left blank (e.g. wishlist item named "Full Zip" with no subtype).
+    // Closet items store the field as .subType (capital T); wishlist as .subtype.
     const inferredWishSub = _inferSubtype((wishItem.name || '') + ' ' + (wishItem.notes || ''));
     const effectiveWish = Object.assign({}, wishItem, {
-      subtype: wishItem.subtype || inferredWishSub,
+      subtype: wishItem.subType || wishItem.subtype || inferredWishSub,
     });
-    const inferredWishSubLC = (effectiveWish.subtype || '').trim().toLowerCase();
+    const wishEffSub = (effectiveWish.subtype || '').trim();
+    const wishFamily  = _subtypeFamily(wishEffSub);
 
-    // Build effective candidate — same inferred-subtype augmentation.
+    // Build effective candidate — honour explicit subType (capital T) first,
+    // then fall back to inference from the item name.
     function mkEffective(cand) {
-      const sub = cand.subtype || _inferSubtype((cand.name || '') + ' ' + (cand.notes || ''));
+      const explicit = cand.subType || cand.subtype; // closet=subType, wishlist=subtype
+      const sub = explicit || _inferSubtype((cand.name || '') + ' ' + (cand.notes || ''));
       return Object.assign({}, cand, { subtype: sub });
     }
 
     // Subtype gate: when we know the wish subtype, only allow candidates
-    // whose (effective) subtype matches — or candidates with no inferable subtype.
+    // in the same subtype family (Jacket passes for Zip-up, Jeans for Pants …)
+    // or candidates with no inferable subtype at all.
     const passesSubtype = (cand) => {
-      if (!inferredWishSubLC) return true;
-      const eff = mkEffective(cand);
-      const candSubLC = (eff.subtype || '').trim().toLowerCase();
-      if (!candSubLC) return true; // can't infer → let score decide
-      return candSubLC === inferredWishSubLC;
+      if (!wishEffSub) return true; // no wish subtype → no gate
+      const eff    = mkEffective(cand);
+      const candSub = (eff.subtype || '').trim();
+      if (!candSub) return true; // can't infer candidate → let score decide
+      if (candSub.toLowerCase() === wishEffSub.toLowerCase()) return true; // exact
+      const cf = _subtypeFamily(candSub);
+      return !!(wishFamily && cf && wishFamily === cf); // same family
     };
 
     const closet = closetItems
