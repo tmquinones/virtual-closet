@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-18 03:14:43 */
+/* TMF Closet bundle — built 2026-05-18 03:51:24 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -931,6 +931,7 @@ function _rowToItem(row) {
     })(),
     returnDecided:       !!row.return_decided,
     wearLog:             Array.isArray(row.wear_log) ? row.wear_log : [],
+    receipt:             row.receipt_path ? API_PHOTO_BASE + row.receipt_path : null,
     createdAt:           row.created_at ? new Date(row.created_at).getTime() : null,
     updatedAt:           row.updated_at ? new Date(row.updated_at).getTime() : null,
   };
@@ -1004,6 +1005,13 @@ async function _itemToBody(item) {
     }
     b.extra_photos_data = photosPayload;
   }
+  // Handle receipt (image or PDF)
+  if (item.receipt instanceof Blob || (item.receipt && typeof item.receipt !== 'string')) {
+    b.receipt_data = await _blobToDataUrl(item.receipt);
+  } else if (item.receipt === null) {
+    b.receipt_path = null;
+  }
+  // If item.receipt is a string URL it's already on the server — don't resend.
   return b;
 }
 
@@ -1940,7 +1948,7 @@ async function openItemDetail(id) {
           <div class="detail-row"><dt>Season</dt><dd>${escapeHtml(seasons)}</dd></div>
           <div class="detail-row"><dt>Purchased</dt><dd>${fmtDate(item.purchaseDate)}</dd></div>
           <div class="detail-row"><dt>Price</dt><dd>${fmtCurrency(item.purchasePrice)}${(item.originalPrice && item.purchasePrice && item.originalPrice > item.purchasePrice) ? ` <span class="savings-badge">saved ${fmtCurrency(item.originalPrice - item.purchasePrice)} (${Math.round((1 - item.purchasePrice / item.originalPrice) * 100)}% off)</span>` : ''}</dd></div>${(item.originalPrice && item.purchasePrice && item.originalPrice > item.purchasePrice) ? `<div class="detail-row"><dt>Original</dt><dd class="muted"><s>${fmtCurrency(item.originalPrice)}</s></dd></div>` : ''}
-          ${item.receipt ? `<div class="detail-row"><dt>Receipt</dt><dd>${item.receipt.type === 'application/pdf' ? 'PDF' : 'Image'} attached · <a href="#/receipts">view in Receipts tab</a></dd></div>` : ''}
+          ${item.receipt ? `<div class="detail-row"><dt>Receipt</dt><dd>${(typeof item.receipt === 'string' ? item.receipt.toLowerCase().includes('.pdf') : item.receipt.type === 'application/pdf') ? 'PDF' : 'Image'} attached · <a href="#/receipts">view in Receipts tab</a></dd></div>` : ''}
           ${(() => {
             if (!window.ratingHelpers) return '';
             const overall = window.ratingHelpers.computeOverall(item);
@@ -2806,7 +2814,7 @@ function itemFormFieldsHtml(item) {
         <label class="field-label" for="f_receipt">Receipt / Invoice <span class="muted">(PDF or image, kept on this device)</span></label>
         <div class="row" style="gap: 8px; align-items: center; flex-wrap: wrap;">
           <input class="input" id="f_receipt" type="file" accept="application/pdf,image/*" style="flex: 1;" />
-          ${item.receipt ? `<span class="muted" id="f_receipt_status" style="font-size: 12px;">Already attached (${item.receipt.type === 'application/pdf' ? 'PDF' : 'Image'})</span>
+          ${item.receipt ? `<span class="muted" id="f_receipt_status" style="font-size: 12px;">Already attached (${(typeof item.receipt === 'string' ? item.receipt.toLowerCase().includes('.pdf') : item.receipt.type === 'application/pdf') ? 'PDF' : 'Image'})</span>
           <button type="button" class="btn btn-ghost btn-sm" id="f_receipt_clear">Remove</button>` : '<span class="muted" id="f_receipt_status" style="font-size: 12px;">No receipt yet</span>'}
         </div>
       </div>
@@ -10208,11 +10216,28 @@ function rotationDayHtml(day) {
     return (n / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
-  function fileExtForBlob(blob) {
-    if (!blob || !blob.type) return 'bin';
-    if (blob.type === 'application/pdf') return 'pdf';
-    if (blob.type.startsWith('image/')) return blob.type.split('/')[1] || 'img';
+  function fileExtForBlob(blobOrUrl) {
+    if (!blobOrUrl) return 'bin';
+    if (typeof blobOrUrl === 'string') {
+      // URL string — infer from extension
+      const ext = blobOrUrl.split('.').pop().split('?')[0].toLowerCase();
+      return ['pdf','jpg','jpeg','png','webp','gif'].includes(ext) ? ext : 'bin';
+    }
+    if (blobOrUrl.type === 'application/pdf') return 'pdf';
+    if (blobOrUrl.type && blobOrUrl.type.startsWith('image/')) return blobOrUrl.type.split('/')[1] || 'img';
     return 'bin';
+  }
+
+  function isPdfReceipt(r) {
+    if (!r) return false;
+    if (typeof r === 'string') return r.toLowerCase().includes('.pdf');
+    return r.type === 'application/pdf';
+  }
+
+  function receiptUrl(r) {
+    if (!r) return null;
+    if (typeof r === 'string') return r;
+    return URL.createObjectURL(r);
   }
 
   function safeName(s) {
@@ -10265,10 +10290,9 @@ function rotationDayHtml(day) {
         const id = Number(b.dataset.viewReceipt);
         const it = await dbGetItem(id);
         if (!it || !it.receipt) return;
-        const url = URL.createObjectURL(it.receipt);
+        const url = receiptUrl(it.receipt);
         window.open(url, '_blank');
-        // Don't revoke immediately — let the new tab finish loading.
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        if (typeof it.receipt !== 'string') setTimeout(() => URL.revokeObjectURL(url), 60000);
       });
     });
     main.querySelectorAll('[data-download-receipt]').forEach(b => {
@@ -10278,14 +10302,14 @@ function rotationDayHtml(day) {
         if (!it || !it.receipt) return;
         const ext = fileExtForBlob(it.receipt);
         const fname = `receipt_${safeName(it.brand)}_${safeName(it.name || it.subtype)}.${ext}`;
-        const url = URL.createObjectURL(it.receipt);
+        const url = receiptUrl(it.receipt);
         const a = document.createElement('a');
         a.href = url;
         a.download = fname;
         document.body.appendChild(a);
         a.click();
         a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        if (typeof it.receipt !== 'string') setTimeout(() => URL.revokeObjectURL(url), 5000);
       });
     });
     main.querySelectorAll('[data-open-item]').forEach(b => {
@@ -10299,7 +10323,7 @@ function rotationDayHtml(day) {
   function receiptRowHtml(it) {
     const url = it.thumb ? blobToUrl(it.thumb) : (it.photo ? blobToUrl(it.photo) : '');
     const r = it.receipt;
-    const isPdf = r && r.type === 'application/pdf';
+    const isPdf = isPdfReceipt(r);
     const meta = [it.brand, it.color].filter(Boolean).join(' · ');
     const price = it.purchasePrice ? '$' + Number(it.purchasePrice).toFixed(2) : '—';
     const date = it.purchaseDate || '';
@@ -10312,7 +10336,7 @@ function rotationDayHtml(day) {
         </div>
         <div class="receipt-stats">
           <div class="receipt-price">${price}</div>
-          <div class="receipt-fileinfo muted">${isPdf ? 'PDF' : 'Image'} · ${fmtBytes(r?.size)}</div>
+          <div class="receipt-fileinfo muted">${isPdf ? 'PDF' : 'Image'}${r?.size ? ' · ' + fmtBytes(r.size) : ''}</div>
         </div>
         <div class="receipt-actions">
           <button class="btn btn-sm" data-view-receipt="${it.id}">View</button>

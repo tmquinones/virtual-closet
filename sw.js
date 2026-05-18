@@ -1,7 +1,7 @@
 // sw.js — That's My Freaking Closet service worker
 // Caches the shell + JS/CSS for offline use. Bumps on each release via CACHE_NAME.
 
-const CACHE_NAME = 'tmfcloset-v67';
+const CACHE_NAME = 'tmfcloset-v68';
 const SHELL = [
   './',
   './index.html',
