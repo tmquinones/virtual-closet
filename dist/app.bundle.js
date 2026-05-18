@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-18 04:05:06 */
+/* TMF Closet bundle — built 2026-05-18 04:34:15 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -6382,6 +6382,11 @@ window.addEventListener('DOMContentLoaded', function () {
     [/\bboots?\b/i,              'shoes',          'Boots'],
     [/\bsandals?\b/i,            'shoes',          'Sandals'],
     [/\bathletic\b|\brunning shoe/i, 'shoes',     'Athletic'],
+    [/\bslippers?\b/i,           'shoes',          'Slippers'],
+    [/\bslides?\b/i,             'shoes',          'Slides'],
+    [/\bearrings?\b/i,           'accessories',    'Earrings'],
+    [/\bnecklace\b/i,            'accessories',    'Necklace'],
+    [/\bbracelet\b/i,            'accessories',    'Bracelet'],
     [/\bhat\b|\bcap\b/i,       'accessories',    'Hat'],
     [/\bbelt\b/i,                'accessories',    'Belt'],
     [/\bbag\b|\bpurse\b|\btote\b/i, 'accessories','Bag'],
@@ -6424,8 +6429,8 @@ window.addEventListener('DOMContentLoaded', function () {
 
   function _similarityScore(wish, candidate) {
     let s = 0;
-    if (wish.garmentType && candidate.garmentType === wish.garmentType) s += 5;
-    if (wish.subtype && candidate.subtype === wish.subtype) s += 4;
+    if (wish.garmentType && candidate.garmentType === wish.garmentType) s += 3;
+    if (wish.subtype && candidate.subtype === wish.subtype) s += 5;
     if (wish.brand && candidate.brand && candidate.brand.toLowerCase() === wish.brand.toLowerCase()) s += 2;
     if (wish.size && candidate.size && candidate.size === wish.size) s += 1;
 
@@ -6463,19 +6468,24 @@ window.addEventListener('DOMContentLoaded', function () {
     // it. Prevents 'accessories' alone from clumping sunglasses with
     // wristlets, sleeves, etc.
     const wishSub = (wishItem.subtype || '').trim().toLowerCase();
+    // If wish has no explicit subtype, try to infer one from its name/notes
+    const inferredWishSub = wishSub || _inferSubtype((wishItem.name || '') + ' ' + (wishItem.notes || '')).toLowerCase();
     const passesSubtype = (cand) => {
-      if (!wishSub) return true;
-      return (cand.subtype || '').trim().toLowerCase() === wishSub;
+      if (!inferredWishSub) return true;
+      const candSub = (cand.subtype || '').trim().toLowerCase();
+      // If candidate has no subtype, don't block it — scoring will handle ranking
+      if (!candSub) return true;
+      return candSub === inferredWishSub;
     };
     const closet = closetItems
       .map(i => ({ item: i, score: _similarityScore(wishItem, i) }))
-      .filter(x => x.score >= 5 && passesSubtype(x.item))
+      .filter(x => x.score >= 6 && passesSubtype(x.item))
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
     const otherWish = wishItems
       .filter(w => w.id !== wishItem.id)
       .map(w => ({ item: w, score: _similarityScore(wishItem, w) }))
-      .filter(x => x.score >= 5 && passesSubtype(x.item))
+      .filter(x => x.score >= 6 && passesSubtype(x.item))
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
     return { closet, wishlist: otherWish };
