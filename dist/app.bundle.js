@@ -1,4 +1,4 @@
-/* TMF Closet bundle — built 2026-05-18 04:48:11 */
+/* TMF Closet bundle — built 2026-05-18 04:54:12 */
 /* Sources: js/data-r9.js, js/utils-r1.js, js/colorpick-r1.js, js/auth-r2.js, js/db-r4.js, js/closet-r10.js, js/wear-r1.js, js/bgremove-r1.js, js/lookbook-r1.js, js/style-dna-r1.js, js/rotation-r1.js, js/resale-r1.js, js/outfits-r7.js, js/color-pairs-r1.js, js/browse-r3.js, js/app-r11.js, js/recover-r1.js, js/audit-r1.js, js/insights-r7.js, js/wishlist-r6.js, js/girlmath-r3.js, js/trip-r1.js, js/compare-r1.js, js/outfit-feedback-r1.js, js/flatlay-r1.js, js/ratings-r1.js, js/capsule-r1.js, js/returned-r1.js, js/daily-r1.js, js/slideshow-r1.js, js/notes-r1.js, js/receipts-r1.js, js/returns-due-r1.js, js/shop-r1.js, js/top10-r1.js, js/cartimport-r1.js, js/emailimport-r1.js, js/migrate-r1.js, js/fit-r1.js, js/theme-r2.js, js/github-sync-r1.js, js/drawer-r1.js, js/scheme-r1.js, js/photo-suggest-r1.js */
 
 
@@ -6378,6 +6378,7 @@ window.addEventListener('DOMContentLoaded', function () {
     [/\bjacket\b/i,              'outerwear',      'Jacket'],
     [/\bcoat\b|\bparka\b/i,    'outerwear',      'Coat'],
     [/\bvest\b/i,                'outerwear',      'Vest'],
+    [/\btennis[- ]?shoe\b|\bcourt[- ]?shoe\b/i, 'shoes', 'Athletic'],
     [/\bsneaker(s)?\b|\btrainer/i, 'shoes',       'Sneakers'],
     [/\bheels?\b/i,              'shoes',          'Heels'],
     [/\bflats?\b|\bloafers?\b|\bballet flat/i, 'shoes', 'Flats'],
@@ -6443,15 +6444,23 @@ window.addEventListener('DOMContentLoaded', function () {
     const wRaw = (wish.color || '').trim();
     const cRaw = (candidate.color || '').trim();
     if (wRaw && cRaw) {
-      const wNorm = (typeof normalizeColor === 'function') ? normalizeColor(wRaw) : wRaw;
-      const cNorm = (typeof normalizeColor === 'function') ? normalizeColor(cRaw) : cRaw;
-      if (wNorm.toLowerCase() === cNorm.toLowerCase()) {
+      const wNorm  = (typeof normalizeColor === 'function') ? normalizeColor(wRaw) : wRaw;
+      const cNorm  = (typeof normalizeColor === 'function') ? normalizeColor(cRaw) : cRaw;
+      // Also try primary colour (first token before "/" or ",") for mixed swatches
+      // like "White/Twilight Blue" so the white component still matches.
+      const cPrim  = (typeof normalizeColor === 'function')
+        ? normalizeColor(cRaw.split(/[\/,]/)[0].trim())
+        : cRaw.split(/[\/,]/)[0].trim();
+      const wPrim  = (typeof normalizeColor === 'function')
+        ? normalizeColor(wRaw.split(/[\/,]/)[0].trim())
+        : wRaw.split(/[\/,]/)[0].trim();
+      if (wNorm.toLowerCase() === cNorm.toLowerCase() || wPrim.toLowerCase() === cPrim.toLowerCase()) {
         s += 3;
-      } else if (typeof familyForColor === 'function' && familyForColor(wNorm) && familyForColor(wNorm) === familyForColor(cNorm)) {
+      } else if (typeof familyForColor === 'function' && familyForColor(wPrim) && familyForColor(wPrim) === familyForColor(cPrim)) {
         s += 2;
       } else {
-        const ws = _colorShade(wNorm);
-        const cs = _colorShade(cNorm);
+        const ws = _colorShade(wPrim);
+        const cs = _colorShade(cPrim);
         if (ws && cs && ws === cs) s += 1;
       }
     }
@@ -6466,32 +6475,40 @@ window.addEventListener('DOMContentLoaded', function () {
     // Returned items aren't owned anymore — exclude them from similarity matches.
     const closetItems = (typeof activeItems === 'function') ? activeItems(closetAll) : closetAll;
     const wishItems = await dbGetAllWishlistItems();
-    // When the wishlist item has a subtype, require the candidate to share
-    // it. Prevents 'accessories' alone from clumping sunglasses with
-    // wristlets, sleeves, etc.
-    const wishSub = (wishItem.subtype || '').trim().toLowerCase();
-    // If wish has no explicit subtype, try to infer one from its name/notes
-    const inferredWishSub = wishSub || _inferSubtype((wishItem.name || '') + ' ' + (wishItem.notes || '')).toLowerCase();
+
+    // Build effective wish — use inferred subtype if explicit one not set.
+    // This ensures _similarityScore awards the subtype bonus even when the
+    // field was left blank (e.g. wishlist item named "Full Zip" with no subtype).
+    const inferredWishSub = _inferSubtype((wishItem.name || '') + ' ' + (wishItem.notes || ''));
+    const effectiveWish = Object.assign({}, wishItem, {
+      subtype: wishItem.subtype || inferredWishSub,
+    });
+    const inferredWishSubLC = (effectiveWish.subtype || '').trim().toLowerCase();
+
+    // Build effective candidate — same inferred-subtype augmentation.
+    function mkEffective(cand) {
+      const sub = cand.subtype || _inferSubtype((cand.name || '') + ' ' + (cand.notes || ''));
+      return Object.assign({}, cand, { subtype: sub });
+    }
+
+    // Subtype gate: when we know the wish subtype, only allow candidates
+    // whose (effective) subtype matches — or candidates with no inferable subtype.
     const passesSubtype = (cand) => {
-      if (!inferredWishSub) return true;
-      let candSub = (cand.subtype || '').trim().toLowerCase();
-      // If candidate has no explicit subtype, infer from its name so shorts
-      // don't slip through as pants matches, etc.
-      if (!candSub) {
-        candSub = _inferSubtype((cand.name || '') + ' ' + (cand.notes || '')).toLowerCase();
-      }
-      // If we truly can't infer anything for the candidate, let score decide
-      if (!candSub) return true;
-      return candSub === inferredWishSub;
+      if (!inferredWishSubLC) return true;
+      const eff = mkEffective(cand);
+      const candSubLC = (eff.subtype || '').trim().toLowerCase();
+      if (!candSubLC) return true; // can't infer → let score decide
+      return candSubLC === inferredWishSubLC;
     };
+
     const closet = closetItems
-      .map(i => ({ item: i, score: _similarityScore(wishItem, i) }))
+      .map(i => ({ item: i, score: _similarityScore(effectiveWish, mkEffective(i)) }))
       .filter(x => x.score >= 5 && passesSubtype(x.item))
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
     const otherWish = wishItems
       .filter(w => w.id !== wishItem.id)
-      .map(w => ({ item: w, score: _similarityScore(wishItem, w) }))
+      .map(w => ({ item: w, score: _similarityScore(effectiveWish, mkEffective(w)) }))
       .filter(x => x.score >= 5 && passesSubtype(x.item))
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
